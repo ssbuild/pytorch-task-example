@@ -3,8 +3,11 @@
 - 基于pytorch-lightning 和 transformers实现的上下游训练框架
 - 当前正在重构中...，接口是不稳定的...
 
-##  模型源码仓库
-  -  [deep_training](https://github.com/ssbuild/deep_training)
+##  主目录
+  - [deep_training](https://github.com/ssbuild/deep_training)
+  - 
+##  安装
+  -  pip install -U deep_training
 
 ## 更新
 - <strong>2022年12月16</strong>
