@@ -5,7 +5,7 @@ import sys
 import typing
 from functools import partial
 
-sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..'))
+
 from deep_training.nlp.models.transformer import TransformerMeta
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT

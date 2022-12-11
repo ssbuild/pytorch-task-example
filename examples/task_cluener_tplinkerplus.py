@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import typing
-sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..'))
+
 
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.transformer import TransformerMeta

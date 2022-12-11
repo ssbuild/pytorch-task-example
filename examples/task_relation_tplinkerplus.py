@@ -7,7 +7,7 @@ import sys
 import typing
 
 from tqdm import tqdm
-sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), '..'))
+
 from deep_training.nlp.metrics.pointer import metric_for_spo
 from deep_training.nlp.models.transformer import TransformerMeta
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
