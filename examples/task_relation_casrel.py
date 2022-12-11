@@ -2,6 +2,9 @@
 import json
 import os
 import sys
+
+from tqdm import tqdm
+
 sys.path.append('..')
 
 
@@ -232,11 +235,10 @@ class MyTransformer(TransformerForHphtlinker, metaclass=TransformerMeta):
         #     return
 
         y_preds, y_trues = [], []
-        idx = 0
-        for o in outputs:
+        for i,o in tqdm(enumerate(outputs),total=len(outputs)):
             logits1, logits2, _, _ = o['outputs']
-            output_labels = self.eval_labels[idx * len(logits1):(idx + 1) * len(logits1)]
-            idx += 1
+            bs = len(logits1)
+            output_labels = self.eval_labels[i * bs:(i + 1) * bs]
             p_spoes = extract_spoes([logits1, logits2])
             t_spoes = output_labels
             y_preds.extend(p_spoes)
@@ -285,7 +287,7 @@ if __name__== '__main__':
 
     
     model = MyTransformer(dataHelper.eval_labels,config=config,model_args=model_args,training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="val_f1", save_last=True, every_n_epochs=1)
+    checkpoint_callback = ModelCheckpoint(monitor="val_f1",  every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

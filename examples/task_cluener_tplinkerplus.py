@@ -50,7 +50,7 @@ train_info_args = {
     'test_max_seq_length': 128,
     #tplinkerplus args
     'shaking_type': 'cln_plus', #one of ['cat','cat_plus','cln','cln_plus']
-    'inner_enc_type': 'lstm', #one of ['mix_pooling','mean_pooling','max_pooling','lstm']
+    'inner_enc_type': 'linear', #one of ['mix_pooling','mean_pooling','max_pooling','lstm','linear']
     'tok_pair_sample_rate': 0,
     # scheduler
     'scheduler_type': 'CAWR',
@@ -68,6 +68,9 @@ class NN_DataHelper(DataHelper):
     eval_labels = []
 
     id2label,label2id = None,None
+
+    max_text_length = 0
+
     def on_data_ready(self):
         self.index = -1
 
@@ -77,6 +80,9 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
         sentence, entities = data
+
+        if mode == 'train':
+            max_seq_length = min(max_seq_length,self.max_text_length + 2)
 
         tokens = list(sentence) if not do_lower_case else list(sentence.lower())
         if len(tokens) > max_seq_length - 2:
@@ -273,7 +279,7 @@ if __name__ == '__main__':
     dm = load_dataset_with_args(dataHelper, training_args,train_files,eval_files, test_files)
 
     model = MyTransformer(dataHelper.eval_labels,tplinker_args=tplinker_args, config=config, model_args=model_args, training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="val_f1", save_last=True, every_n_epochs=1)
+    checkpoint_callback = ModelCheckpoint(monitor="val_f1", every_n_epochs=1)
 
 
     trainer = Trainer(

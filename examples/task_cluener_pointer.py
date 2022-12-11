@@ -131,6 +131,7 @@ class NN_DataHelper(DataHelper):
                         for k, v in entities.items():
                             pts = [_ for a_ in list(v.values()) for _ in a_]
                             for pt in pts:
+                                assert pt[0] <= pt[1], ValueError(line, pt)
                                 entities_label.append((k, pt[0], pt[1]))
                     else:
                         entities_label = None
@@ -199,7 +200,7 @@ if __name__ == '__main__':
 
     dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files)
     model = MyTransformer(dataHelper.eval_labels,with_efficient=True,config=config, model_args=model_args, training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="val_f1", save_last=True, every_n_epochs=1)
+    checkpoint_callback = ModelCheckpoint(monitor="val_f1", every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
          max_epochs=training_args.max_epochs,

@@ -46,6 +46,7 @@ train_info_args = {
     'train_batch_size': 8,
     'eval_batch_size': 1,
     'test_batch_size': 1,
+    'optimizer': 'adam',
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
     'max_grad_norm': 1.0,
@@ -214,6 +215,8 @@ class NN_DataHelper(DataHelper):
                             for l, relation in re_node.items():
                                 s = relation[0]
                                 o = relation[1]
+                                assert s['pos'][0] < s['pos'][1], ValueError(text, s['pos'])
+                                assert o['pos'][0] < o['pos'][1], ValueError(text, o['pos'])
                                 re_list_label.append((
                                     # (s['pos'][0], s['pos'][1],s['label']),
                                     # l,
@@ -256,7 +259,7 @@ class NN_DataHelper(DataHelper):
         max_len = torch.max(o.pop('seqlen'))
         shaking_len = int(max_len * (max_len + 1) / 2)
         labels = torch.zeros(size=(bs ,len(NN_DataHelper.label2id),shaking_len), dtype=torch.long)
-        get_pos = lambda x0, x1: x0 * max_len + int(x1 - x0 * (x0 + 1) / 2)
+        get_pos = lambda x0, x1: x0 * max_len + x1 - int(x0 * (x0 + 1) / 2)
         for linfo, label in zip(labels_info, labels):
             for l, s, e in linfo:
                 assert s <= e
@@ -290,7 +293,7 @@ class MyTransformer(TransformerForTplinkerPlus, metaclass=TransformerMeta):
         # 关系标注
         eval_labels = self.eval_labels
         y_preds, y_trues = [], []
-        for i,o in tqdm(enumerate(outputs)):
+        for i,o in tqdm(enumerate(outputs),total=len(outputs)):
             logits, _ = o['outputs']
             bs = len(logits)
             output_labels = eval_labels[i*bs:(i + 1)*bs]
@@ -343,7 +346,7 @@ if __name__ == '__main__':
     dm = load_dataset_with_args(dataHelper, training_args,train_files,eval_files, test_files)
 
     model = MyTransformer(dataHelper.eval_labels,tplinker_args=tplinker_args, config=config, model_args=model_args, training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="val_f1", save_last=True, every_n_epochs=1)
+    checkpoint_callback = ModelCheckpoint(monitor="val_f1", save_last=False, every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
