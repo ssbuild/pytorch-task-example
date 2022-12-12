@@ -131,8 +131,7 @@ class MyTransformer(TransformerForMaskLM,metaclass=TransformerMeta):
     def compute_loss_mlm(self,y_trues,y_preds,weight):
         y_preds = torch.transpose(y_preds, 1, 2)
         loss = self.loss_fct(y_preds,y_trues)
-        loss = loss * weight
-        loss = torch.sum(loss, dtype=torch.float) / (torch.sum(weight, dtype=torch.float) + 1e-8)
+        loss = torch.sum(loss * weight, dtype=torch.float) / (torch.sum(weight, dtype=torch.float) + 1e-12)
         return loss.mean()
 
     def compute_loss(self,batch,batch_idx) -> tuple:
