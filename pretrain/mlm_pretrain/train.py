@@ -5,7 +5,7 @@ import sys
 
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)),'../..'))
+
 import typing
 from deep_training.data_helper import DataHelper
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
