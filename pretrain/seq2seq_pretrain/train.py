@@ -1,25 +1,21 @@
 # -*- coding: utf-8 -*-
 import json
-import logging
-import os
-import sys
-
-
-from pytorch_lightning.callbacks import ModelCheckpoint
 import typing
+
 import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
-from torch.nn import CrossEntropyLoss
-from pytorch_lightning import Trainer
+from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import make_dataset_with_args, load_dataset_with_args, \
     load_tokenizer_and_config_with_args
 from deep_training.nlp.models.transformer import TransformerForSeq2SeqLM, TransformerMeta
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
+from torch.nn import CrossEntropyLoss
 from transformers import HfArgumentParser, BertTokenizer
-from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 
 train_info_args = {
-    'devices':  '1',
+    'devices': '1',
     'data_backend': 'leveldb',
     'model_type': 't5',
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
@@ -43,11 +39,12 @@ train_info_args = {
     'max_target_length': 64,
 }
 
+
 class NN_DataHelper(DataHelper):
     # 切分词
     def on_data_process(self, data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length,max_target_length, do_lower_case, label2id, mode = user_data
+        tokenizer, max_seq_length, max_target_length, do_lower_case, label2id, mode = user_data
         x = data
         o1 = tokenizer.encode_plus(x[0], max_length=max_seq_length, truncation=True, add_special_tokens=True, )
         o2 = tokenizer.encode_plus(x[1], max_length=max_target_length, truncation=True, add_special_tokens=True, )
@@ -62,9 +59,9 @@ class NN_DataHelper(DataHelper):
             attention_mask = np.pad(attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
 
         decoder_input_ids = np.asarray(o2['input_ids'], dtype=np.int64)
-        labels = np.asarray(decoder_input_ids[1:],dtype=np.int64)
-        decoder_input_ids = np.asarray(decoder_input_ids[:-1],dtype=np.int64)
-        decoder_attention_mask = np.asarray([1] * len(decoder_input_ids),dtype=np.int64)
+        labels = np.asarray(decoder_input_ids[1:], dtype=np.int64)
+        decoder_input_ids = np.asarray(decoder_input_ids[:-1], dtype=np.int64)
+        decoder_attention_mask = np.asarray([1] * len(decoder_input_ids), dtype=np.int64)
 
         dlen = np.asarray(len(decoder_input_ids), dtype=np.int64)
         pad_len = max_target_length - dlen
@@ -79,7 +76,7 @@ class NN_DataHelper(DataHelper):
             'attention_mask': attention_mask,
             'decoder_input_ids': decoder_input_ids,
             'decoder_attention_mask': decoder_attention_mask,
-            'labels':labels,
+            'labels': labels,
             'slen': slen,
             'dlen': dlen
         }
@@ -98,7 +95,6 @@ class NN_DataHelper(DataHelper):
                         break
         return D
 
-
     @staticmethod
     def collate_fn(batch):
         o = {}
@@ -113,7 +109,6 @@ class NN_DataHelper(DataHelper):
         for k in o:
             o[k] = torch.stack(o[k])
 
-
         slen = torch.max(o.pop('slen'))
         dlen = torch.max(o.pop('dlen'))
 
@@ -127,23 +122,23 @@ class NN_DataHelper(DataHelper):
 
 
 class MyTransformer(TransformerForSeq2SeqLM, metaclass=TransformerMeta):
-    def __init__(self,*args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
 
-    def compute_loss(self,batch,batch_idx) -> tuple:
-        labels = batch.pop('labels',None)
+    def compute_loss(self, batch, batch_idx) -> tuple:
+        labels = batch.pop('labels', None)
         outputs = self(**batch)
         lm_logits = outputs[0]
         if labels is not None:
             loss = self.loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
-            outputs = (loss,lm_logits,labels)
+            outputs = (loss, lm_logits, labels)
         else:
             outputs = (lm_logits,)
         return outputs
 
 
-if __name__== '__main__':
+if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
@@ -152,9 +147,15 @@ if __name__== '__main__':
                                                                                 data_args)
 
     token_fn_args_dict = {
-        'train': (tokenizer, data_args.train_max_seq_length,data_args.max_target_length, model_args.do_lower_case, label2id, 'train'),
-        'eval': (tokenizer, data_args.eval_max_seq_length,data_args.max_target_length, model_args.do_lower_case, label2id, 'eval'),
-        'test': (tokenizer, data_args.test_max_seq_length,data_args.max_target_length, model_args.do_lower_case, label2id, 'test')
+        'train': (
+        tokenizer, data_args.train_max_seq_length, data_args.max_target_length, model_args.do_lower_case, label2id,
+        'train'),
+        'eval': (
+        tokenizer, data_args.eval_max_seq_length, data_args.max_target_length, model_args.do_lower_case, label2id,
+        'eval'),
+        'test': (
+        tokenizer, data_args.test_max_seq_length, data_args.max_target_length, model_args.do_lower_case, label2id,
+        'test')
     }
 
     N = 1
@@ -174,21 +175,20 @@ if __name__== '__main__':
                 make_dataset_with_args(dataHelper, data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-
     dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files)
 
-    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
+    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
     checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=5, every_n_train_steps=1000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
         accelerator="gpu",
-        devices=data_args.devices,  
+        devices=data_args.devices,
         enable_progress_bar=True,
         default_root_dir=data_args.output_dir,
         gradient_clip_val=training_args.max_grad_norm,
-        accumulate_grad_batches = training_args.gradient_accumulation_steps
+        accumulate_grad_batches=training_args.gradient_accumulation_steps
     )
 
     if data_args.do_train:
