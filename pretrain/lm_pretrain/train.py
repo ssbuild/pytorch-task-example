@@ -63,8 +63,8 @@ class NN_DataHelper(DataHelper):
         if pad_len > 0:
             pad_val = tokenizer.pad_token_id
             input_ids = np.pad(input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-            attention_mask = np.pad(attention_mask, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-            token_type_ids = np.pad(token_type_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
+            attention_mask = np.pad(attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
+            token_type_ids = np.pad(token_type_ids, (0, pad_len), 'constant', constant_values=(0, 0))
         d = {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
