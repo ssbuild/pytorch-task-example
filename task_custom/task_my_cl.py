@@ -1,34 +1,32 @@
 # -*- coding: utf-8 -*-
 import json
-import os
-import sys
 import typing
-from pytorch_lightning.callbacks import ModelCheckpoint
+
 import numpy as np
-from torch import nn
-from deep_training.data_helper import DataHelper
 import torch
-import logging
-from pytorch_lightning import Trainer
+from deep_training.data_helper import DataHelper
+from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import make_dataset_with_args, load_dataset_with_args, \
     load_tokenizer_and_config_with_args
-from transformers import HfArgumentParser, BertTokenizer
-from deep_training.nlp.models.transformer import TransformerModel, TransformerLightningModule, TransformerMeta
 from deep_training.nlp.losses.circle_loss import CircleLoss
-from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
+from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
+from torch import nn
+from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices':  '1',
+    'devices': '1',
     'data_backend': 'leveldb',
     'model_type': 'bert',
     'model_name_or_path': '/data/torch/bert-base-chinese',
     'tokenizer_name': '/data/torch/bert-base-chinese',
     'config_name': '/data/torch/bert-base-chinese/config.json',
-    #语料已经制作好，不需要在转换
+    # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
     'do_eval': False,
-    'train_file': '/data/record/cse/dataset_0-train.leveldb',
+    'train_file': '/data/record/cse/dataset_0-train.lmdb',
     'eval_file': '',
     'test_file': '',
     'label_file': '',
@@ -45,18 +43,19 @@ train_info_args = {
     'max_seq_length': 512
 }
 
+
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self,data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-        sentence,label_str = data
+        sentence, label_str = data
 
         o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
         input_ids = np.asarray(o['input_ids'], dtype=np.int64)
         attention_mask = np.asarray(o['attention_mask'], dtype=np.int64)
 
-        labels = np.asarray(label2id[label_str] if label_str is not None else 0,dtype=np.int64)
+        labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
         seqlen = np.asarray(len(input_ids), dtype=np.int64)
         pad_len = max_seq_length - len(input_ids)
         if pad_len > 0:
@@ -71,7 +70,7 @@ class NN_DataHelper(DataHelper):
         }
         return d
 
-    #读取标签
+    # 读取标签
     def on_get_labels(self, files: typing.List[str]):
         return None, None
         if files is None:
@@ -93,7 +92,7 @@ class NN_DataHelper(DataHelper):
         return label2id, id2label
 
     # 读取文件
-    def on_get_corpus(self, files: typing.List, mode:str):
+    def on_get_corpus(self, files: typing.List, mode: str):
         D = []
         for filename in files:
             with open(filename, mode='r', encoding='utf-8') as f:
@@ -102,9 +101,8 @@ class NN_DataHelper(DataHelper):
                     jd = json.loads(line)
                     if not jd:
                         continue
-                    D.append((jd['sentence'], jd.get('label',None)))
+                    D.append((jd['sentence'], jd.get('label', None)))
         return D
-
 
     @staticmethod
     def collate_fn(batch):
@@ -129,8 +127,8 @@ class NN_DataHelper(DataHelper):
 
 
 class MyTransformer(TransformerModel, metaclass=TransformerMeta):
-    def __init__(self,*args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
         self.loss_fn = CircleLoss(m=0.25, gamma=32)
 
@@ -139,27 +137,27 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self,batch,batch_idx) -> tuple:
-        labels: torch.Tensor = batch.pop('labels',None)
+    def compute_loss(self, batch, batch_idx) -> tuple:
+        labels: torch.Tensor = batch.pop('labels', None)
         outputs = self(**batch)
         logits = self.feat_head(outputs[0][:, 0, :])
         logits = torch.tan(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)
-            loss = self.loss_fn(logits,labels)
-            outputs = (loss,logits,labels)
+            loss = self.loss_fn(logits, labels)
+            outputs = (loss, logits, labels)
         else:
             outputs = (logits,)
         return outputs
 
 
-
-if __name__== '__main__':
+if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
+    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
+                                                                                data_args)
 
     token_fn_args_dict = {
         'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
@@ -187,18 +185,18 @@ if __name__== '__main__':
     print(train_files)
     dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files)
 
-    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
+    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
     checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
         accelerator="gpu",
-        devices=data_args.devices,  
+        devices=data_args.devices,
         enable_progress_bar=True,
         default_root_dir=data_args.output_dir,
         gradient_clip_val=training_args.max_grad_norm,
-        accumulate_grad_batches = training_args.gradient_accumulation_steps,
+        accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
     )
 

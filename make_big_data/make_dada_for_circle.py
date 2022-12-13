@@ -14,7 +14,7 @@ from fastdatasets import gfile
 
 train_info_args = {
     'devices': '1',
-    'data_backend': 'leveldb',
+    'data_backend': 'lmdb',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
