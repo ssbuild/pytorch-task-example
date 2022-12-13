@@ -3,10 +3,7 @@ import json
 import os
 import sys
 import typing
-
 from pytorch_lightning.callbacks import ModelCheckpoint
-
-
 import numpy as np
 from torch import nn
 from deep_training.data_helper import DataHelper
