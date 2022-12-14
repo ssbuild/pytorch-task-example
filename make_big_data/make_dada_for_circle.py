@@ -78,7 +78,7 @@ class NN_DataHelper(DataHelper):
                 continue
             labels.append(line)
         labels = list(set(labels))
-
+        labels = sorted(labels)
         label2id = {l:i for i,l in enumerate(labels)}
         id2label = {i: l for i, l in enumerate(labels)}
         self.label2id = label2id

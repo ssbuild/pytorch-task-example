@@ -17,16 +17,17 @@ from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
     'devices': '1',
-    'data_backend': 'leveldb',
+    'data_backend': 'lmdb',
     'model_type': 'bert',
-    'model_name_or_path': '/data/torch/bert-base-chinese',
-    'tokenizer_name': '/data/torch/bert-base-chinese',
-    'config_name': '/data/torch/bert-base-chinese/config.json',
+    'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
     'do_eval': False,
-    'train_file': '/data/record/cse/dataset_0-train.lmdb',
+    # 'train_file': '/data/record/cse/dataset_0-train.lmdb',
+    'train_file': '/home/tk/train/make_big_data/output/dataset_0-train.lmdb',
     'eval_file': '',
     'test_file': '',
     'label_file': '',
@@ -186,7 +187,7 @@ if __name__ == '__main__':
     dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_epochs=1)
+    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_train_steps=1000,save_top_k=10)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

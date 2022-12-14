@@ -110,6 +110,7 @@ class NN_DataHelper(DataHelper):
             'address', 'book', 'company', 'game', 'government', 'movie', 'name', 'organization', 'position', 'scene'
         ]
         labels = list(set(labels))
+        labels = sorted(labels)
         label2id = {label: i for i, label in enumerate(labels)}
         id2label = {i: label for i, label in enumerate(labels)}
         return label2id, id2label

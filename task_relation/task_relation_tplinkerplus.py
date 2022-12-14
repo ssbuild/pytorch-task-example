@@ -163,6 +163,7 @@ class NN_DataHelper(DataHelper):
                 entities.add(jd['object'])
 
         labels = list(set(labels))
+        labels = sorted(labels)
         labels = [i + '_' + j for i in labels for j in ['SOH','OSH','SOT','OST']]
         labels += [i + '_EE' for i in entities]
         label2id = {label: i for i, label in enumerate(labels)}
