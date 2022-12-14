@@ -54,11 +54,11 @@ train_info_args = {
     'lstm_hid_size': 768,
     'conv_hid_size': 96,
     'biaffine_size': 768,
-    'ffnn_hid_size': 128,
+    'ffnn_hid_size': 768,
     'dilation': [1,2,3],
-    'emb_dropout': 0.5,
-    'conv_dropout': 0.5,
-    'out_dropout': 0.3333,
+    'emb_dropout': 0.1,
+    'conv_dropout': 0.1,
+    'out_dropout': 0.1,
 
 
 }
