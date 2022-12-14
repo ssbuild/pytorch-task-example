@@ -31,6 +31,7 @@ train_info_args = {
     'train_file': '/data/nlp/nlp_train_data/clue/cluener/train.json',
     'eval_file': '/data/nlp/nlp_train_data/clue/cluener/dev.json',
     'test_file': '/data/nlp/nlp_train_data/clue/cluener/test.json',
+    'optimizer': 'adamw',
     'learning_rate': 5e-5,
     'learning_rate_for_task': 5e-5,
     'max_epochs': 15,
@@ -46,8 +47,8 @@ train_info_args = {
     'train_max_seq_length': 90,
     'eval_max_seq_length': 120,
     'test_max_seq_length': 120,
-#w2ner param
-    'use_bert_last_4_layers':False,
+#w2nerArguments
+    'use_last_4_layers': False, #例如bert 后四层平均
     'dist_emb_size': 20,
     'type_emb_size': 20,
     'lstm_hid_size': 768,
@@ -55,9 +56,9 @@ train_info_args = {
     'biaffine_size': 768,
     'ffnn_hid_size': 128,
     'dilation': [1,2,3],
-    'emb_dropout': 0.2,
-    'conv_dropout': 0.2,
-    'out_dropout': 0.1,
+    'emb_dropout': 0.5,
+    'conv_dropout': 0.5,
+    'out_dropout': 0.3333,
 
 
 }
