@@ -43,9 +43,9 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 120,
-    'eval_max_seq_length': 160,
-    'test_max_seq_length': 160,
+    'train_max_seq_length': 90,
+    'eval_max_seq_length': 120,
+    'test_max_seq_length': 120,
 #w2ner param
     'use_bert_last_4_layers':False,
     'dist_emb_size': 20,
@@ -113,8 +113,9 @@ class NN_DataHelper(DataHelper):
         dist_inputs = np.zeros((length, length), dtype=np.int32)
         grid_mask2d = np.ones((length, length), dtype=bool)
 
-        for i in range(seqlen):
-            pieces2word[i] = 1
+        for i in range(seqlen - 1):
+            for j in range(i + 1, i + 2):
+                pieces2word[i][j] = 1
         for k in range(seqlen):
             dist_inputs[k, :] += k
             dist_inputs[:, k] -= k
@@ -231,6 +232,7 @@ class NN_DataHelper(DataHelper):
         o['pieces2word'] = o['pieces2word'][:, :max_len, :max_len]
         o['dist_inputs'] = o['dist_inputs'][:, :max_len, :max_len]
         o['grid_mask2d'] = o['grid_mask2d'][:, :max_len, :max_len]
+
         return o
 
 
