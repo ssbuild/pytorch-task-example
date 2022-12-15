@@ -1,25 +1,20 @@
 # -*- coding: utf-8 -*-
 import json
-import logging
-import os
-import sys
-
-from pytorch_lightning.callbacks import ModelCheckpoint
-
-
 import typing
+
 import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
-from pytorch_lightning import Trainer
+from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import make_dataset_with_args, load_dataset_with_args, \
     load_tokenizer_and_config_with_args
 from deep_training.nlp.models.transformer import TransformerForCausalLM, TransformerMeta
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
 from transformers import HfArgumentParser, BertTokenizer
-from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 
 train_info_args = {
-    'devices':  '1',
+    'devices': '1',
     'data_backend': 'memory_raw',
     'model_type': 'gpt2',
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
@@ -42,11 +37,12 @@ train_info_args = {
     'test_max_seq_length': 512,
 }
 
+
 class NN_DataHelper(DataHelper):
     # 切分词
     def on_data_process(self, data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
-        tokenizer,max_seq_length,do_lower_case, label2id,mode = user_data
+        tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
         x = data
         if isinstance(x, tuple):
             o = tokenizer(text=x[0], text_pair=x[1], max_length=max_seq_length, truncation=True,
@@ -87,7 +83,6 @@ class NN_DataHelper(DataHelper):
                         break
         return D
 
-
     @staticmethod
     def collate_fn(batch):
         o = {}
@@ -110,13 +105,13 @@ class NN_DataHelper(DataHelper):
         o['labels'] = o['labels'][:, :max_len]
         return o
 
+
 class MyTransformer(TransformerForCausalLM, metaclass=TransformerMeta):
-    def __init__(self,*args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
 
 
-
-if __name__== '__main__':
+if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
@@ -149,21 +144,19 @@ if __name__== '__main__':
 
     dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files)
 
-
-    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
+    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
     checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=10, every_n_train_steps=1000)
-
 
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
         accelerator="gpu",
-        devices=data_args.devices,  
+        devices=data_args.devices,
         enable_progress_bar=True,
         default_root_dir=data_args.output_dir,
         gradient_clip_val=training_args.max_grad_norm,
-        accumulate_grad_batches = training_args.gradient_accumulation_steps
+        accumulate_grad_batches=training_args.gradient_accumulation_steps
     )
 
     if data_args.do_train:

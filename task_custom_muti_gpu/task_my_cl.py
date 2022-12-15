@@ -16,32 +16,34 @@ from torch import nn
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices': '1',
+    'devices': '4',
     'data_backend': 'record',
     'model_type': 'bert',
-    'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
+    'model_name_or_path': '/data/torch/bert-base-chinese',
+    'tokenizer_name': '/data/torch/bert-base-chinese',
+    'config_name': '/data/torch/bert-base-chinese/config.json',
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
     'do_eval': False,
-    # 'train_file': '/data/record/cse/dataset_0-train.lmdb',
-    'train_file': '/home/tk/train/make_big_data/output/dataset_0-train.record',
+    'train_file': '/data/record/cse/dataset_0-train.record',
     'eval_file': '',
     'test_file': '',
     'label_file': '',
     'learning_rate': 5e-5,
-    'max_epochs': 3,
-    'train_batch_size': 10,
-    'test_batch_size': 2,
+    'max_steps':  120000,
+    'max_epochs': -1,
+    'train_batch_size': 11,
+    'test_batch_size': 1,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
     'max_grad_norm': 1.0,
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'max_seq_length': 512
+    'train_max_seq_length': 512,
+    'eval_max_seq_length': 512,
+    'test_max_seq_length': 512,
 }
 
 
@@ -184,6 +186,7 @@ if __name__ == '__main__':
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
     print(train_files)
+
     dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
@@ -199,7 +202,19 @@ if __name__ == '__main__':
         gradient_clip_val=training_args.max_grad_norm,
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
+        strategy='ddp_sharded',
     )
+
+    #Available names: bagua, colossalai, ddp, ddp_find_unused_parameters_false, ddp_fork,
+    # ddp_fork_find_unused_parameters_false, ddp_fully_sharded,
+    # ddp_notebook, ddp_notebook_find_unused_parameters_false, ddp_sharded,
+    # ddp_sharded_find_unused_parameters_false, ddp_sharded_spawn,
+    # ddp_sharded_spawn_find_unused_parameters_false,
+    # ddp_spawn, ddp_spawn_find_unused_parameters_false,
+    # deepspeed, deepspeed_stage_1, deepspeed_stage_2, deepspeed_stage_2_offload,
+    # deepspeed_stage_3, deepspeed_stage_3_offload, deepspeed_stage_3_offload_nvme,
+    # dp, fsdp, fsdp_native, fsdp_native_full_shard_offload, horovod, hpu_parallel,
+    # hpu_single, ipu_strategy, single_device, single_tpu, tpu_spawn, tpu_spawn_debug"
 
     if data_args.do_train:
         trainer.fit(model, datamodule=dm)
