@@ -33,6 +33,7 @@ train_info_args = {
 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
+'optimizer': 'adamw',
 'learning_rate':5e-5,
 'max_epochs':3,
 'train_batch_size':64,

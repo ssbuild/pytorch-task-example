@@ -2,7 +2,6 @@
 import json
 import os
 import sys
-sys.path.append('..')
 
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT

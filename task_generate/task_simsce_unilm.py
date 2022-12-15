@@ -29,6 +29,8 @@ train_info_args = {
     'do_train': True,
     'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
     'max_steps': 100000,
+    'optimizer': 'adamw',
+    'learning_rate': 5e-5,
     'train_batch_size': 10,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,

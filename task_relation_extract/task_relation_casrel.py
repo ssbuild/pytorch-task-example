@@ -2,12 +2,7 @@
 import json
 import os
 import sys
-
 from tqdm import tqdm
-
-sys.path.append('..')
-
-
 from deep_training.nlp.metrics.pointer import metric_for_spo
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from deep_training.nlp.models.transformer import TransformerMeta
