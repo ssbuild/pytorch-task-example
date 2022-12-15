@@ -21,7 +21,7 @@ from deep_training.utils.maskedlm import make_mlm_wwm_sample
 
 train_info_args = {
     'devices':'1',
-    'data_backend': 'leveldb',
+    'data_backend': 'memory_raw',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',

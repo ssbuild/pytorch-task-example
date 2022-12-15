@@ -17,7 +17,7 @@ from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
     'devices': '1',
-    'data_backend': 'lmdb',
+    'data_backend': 'record',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -27,7 +27,7 @@ train_info_args = {
     'do_train': True,
     'do_eval': False,
     # 'train_file': '/data/record/cse/dataset_0-train.lmdb',
-    'train_file': '/home/tk/train/make_big_data/output/dataset_0-train.lmdb',
+    'train_file': '/home/tk/train/make_big_data/output/dataset_0-train.record',
     'eval_file': '',
     'test_file': '',
     'label_file': '',

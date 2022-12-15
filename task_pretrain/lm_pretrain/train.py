@@ -20,7 +20,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 
 train_info_args = {
     'devices':  '1',
-    'data_backend': 'leveldb',
+    'data_backend': 'memory_raw',
     'model_type': 'gpt2',
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
