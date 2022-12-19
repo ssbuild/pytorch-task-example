@@ -8,7 +8,7 @@ import numpy as np
 from fastdatasets.record import load_dataset as Loader, gfile, RECORD, NumpyWriter
 from tqdm import tqdm
 
-
+#拆分数据集
 def split_records(input_record_filenames, output_train_file, output_eval_file, compression_type='GZIP'):
     print('split_records record...')
     options = RECORD.TFRecordOptions(compression_type=compression_type)
@@ -42,7 +42,7 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
             num_train += 1
             count = num_train
             writer = writer_train
-
+        #添加键值
         example['id'] = np.asarray(count - 1,dtype=np.int32)
 
         writer.write(example)
