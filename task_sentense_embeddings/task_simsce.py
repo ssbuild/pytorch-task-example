@@ -70,11 +70,7 @@ class NN_DataHelper(DataHelper):
             'token_type_ids': o['token_type_ids'],
             'seqlen': seqlen
         }
-
-        return [
-            d,
-            copy.deepcopy(d)
-        ]
+        return d
 
     def on_get_corpus(self, files: typing.List, mode: str):
         D = []
@@ -125,7 +121,6 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         super(MyTransformer, self).__init__(*args, **kwargs)
         config = self.config
         self.sim_head = nn.Linear(config.hidden_size, 512, bias=False)
-        self.loss_fct = CrossEntropyLoss(reduction='none', ignore_index=self.config.pad_token_id)
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
@@ -135,6 +130,8 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
 
 
     def compute_loss(self, batch, batch_idx):
+        if self.training:
+            batch = {k: torch.repeat_interleave(v, 2, dim=1) for k, v in batch.items()}
         outputs = self(**batch)
         simcse_logits = self.sim_head(outputs[1])
         if self.training:
@@ -180,13 +177,13 @@ if __name__ == '__main__':
                 dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    train_datasets = dataHelper.load_dataset(train_files, shuffle=False)
+    train_datasets = dataHelper.load_dataset(train_files, shuffle=True)
     eval_datasets = dataHelper.load_dataset(eval_files)
     test_datasets = dataHelper.load_dataset(test_files)
     if train_datasets:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else False)
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
     if eval_datasets:
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
                                    collate_fn=dataHelper.collate_fn)

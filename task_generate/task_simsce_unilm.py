@@ -48,28 +48,26 @@ class NN_DataHelper(DataHelper):
         x = data
         assert isinstance(x,tuple)
 
-        outputs = []
-        for _ in range(2):
-            o = tokenizer(text=x[0], text_pair=x[1], max_length=max_seq_length, truncation=True,
-                          add_special_tokens=True)
 
-            input_ids = np.asarray(o['input_ids'], dtype=np.int64)
-            token_type_ids = np.asarray(o['token_type_ids'], dtype=np.int64)
+        o = tokenizer(text=x[0], text_pair=x[1], max_length=max_seq_length, truncation=True,
+                      add_special_tokens=True)
 
-            seqlen = np.asarray(len(input_ids), dtype=np.int64)
-            pad_len = max_seq_length - len(input_ids)
-            if pad_len > 0:
-                pad_val = tokenizer.pad_token_id
-                input_ids = np.pad(input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-                token_type_ids = np.pad(token_type_ids, (0, pad_len), 'constant', constant_values=(0, 0))
-            d = {
-                'input_ids': input_ids,
-                'token_type_ids': token_type_ids,
-                'labels': input_ids,
-                'seqlen': seqlen
-            }
-            outputs.append(d)
-        return outputs
+        input_ids = np.asarray(o['input_ids'], dtype=np.int64)
+        token_type_ids = np.asarray(o['token_type_ids'], dtype=np.int64)
+
+        seqlen = np.asarray(len(input_ids), dtype=np.int64)
+        pad_len = max_seq_length - len(input_ids)
+        if pad_len > 0:
+            pad_val = tokenizer.pad_token_id
+            input_ids = np.pad(input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
+            token_type_ids = np.pad(token_type_ids, (0, pad_len), 'constant', constant_values=(0, 0))
+        d = {
+            'input_ids': input_ids,
+            'token_type_ids': token_type_ids,
+            'labels': input_ids,
+            'seqlen': seqlen
+        }
+        return d
 
 
     # 读取文件
@@ -118,6 +116,8 @@ class MyTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
         ]
 
     def compute_loss(self,batch,batch_idx):
+        if self.training:
+            batch = {k: torch.repeat_interleave(v, 2, dim=1) for k, v in batch.items()}
         labels = batch.pop('labels',None)
         batch['attention_mask'] = unilm_mask(batch['token_type_ids'])
         outputs = self(**batch)
@@ -173,13 +173,13 @@ if __name__== '__main__':
                 dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    train_datasets = dataHelper.load_dataset(train_files, shuffle=False)
+    train_datasets = dataHelper.load_dataset(train_files, shuffle=True)
     eval_datasets = dataHelper.load_dataset(eval_files)
     test_datasets = dataHelper.load_dataset(test_files)
     if train_datasets:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else False)
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
     if eval_datasets:
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
                                    collate_fn=dataHelper.collate_fn)

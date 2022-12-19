@@ -6,6 +6,7 @@ import typing
 import numpy as np
 import scipy
 import torch
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
@@ -45,7 +46,7 @@ train_info_args = {
     'train_batch_size': 10,
     'test_batch_size': 10,
     'adam_epsilon': 1e-8,
-    'gradient_accumulation_steps': 1,
+    'gradient_accumulation_steps': 10,
     'max_grad_norm': 1.0,
     'weight_decay': 0,
     'warmup_steps': 0,
@@ -187,10 +188,11 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         labels: torch.Tensor = batch.pop('labels', None)
         outputs = self(**batch)
         logits = self.feat_head(outputs[0][:, 0, :])
-        logits = torch.tan(logits)
+        # logits = torch.tan(logits)
+        # logits = F.normalize(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)
-            loss = self.loss_fn(logits, labels)
+            loss = self.loss_fn(F.normalize(logits), labels)
             outputs = (loss, logits, labels)
         else:
             outputs = (logits,)
