@@ -1,23 +1,21 @@
 # -*- coding: utf-8 -*-
 import json
-import os
 import random
-import sys
-
-from pytorch_lightning.callbacks import ModelCheckpoint
 import typing
+
 import torch
-from torch.nn import CrossEntropyLoss
 from deep_training.data_helper import DataHelper
-from torch import nn
-from pytorch_lightning import Trainer
-from deep_training.data_helper import make_dataset_with_args, load_dataset_with_args, \
-    load_tokenizer_and_config_with_args
-from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
+from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
+from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.contrast import compute_simcse_loss
-from transformers import HfArgumentParser, BertTokenizer
-from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments,MlmDataArguments
+from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
+from torch import nn
+from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader, IterableDataset
+from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
     'devices':'1',
@@ -201,18 +199,31 @@ if __name__== '__main__':
         intermediate_name = data_args.intermediate_name + '_{}'.format(i)
         if data_args.do_train:
             train_files.append(
-                make_dataset_with_args(dataHelper, data_args.train_file, token_fn_args_dict['train'], data_args,
+                dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'], data_args,
                                        intermediate_name=intermediate_name, shuffle=True, mode='train'))
         if data_args.do_eval:
             eval_files.append(
-                make_dataset_with_args(dataHelper, data_args.eval_file, token_fn_args_dict['eval'], data_args,
+                dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='eval'))
         if data_args.do_test:
             test_files.append(
-                make_dataset_with_args(dataHelper, data_args.test_file, token_fn_args_dict['test'], data_args,
+                dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files, allow_train_shuffle=False)
+    train_datasets = dataHelper.load_dataset(train_files, shuffle=False)
+    eval_datasets = dataHelper.load_dataset(eval_files)
+    test_datasets = dataHelper.load_dataset(test_files)
+    if train_datasets:
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+    if eval_datasets:
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
+    if test_datasets:
+        test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
+    print('*' * 30, train_datasets, eval_datasets, test_datasets)
 
     model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
     checkpoint_callback = ModelCheckpoint(monitor="loss", save_last=False, every_n_epochs=1)
@@ -230,11 +241,11 @@ if __name__== '__main__':
         num_sanity_val_steps=0,
     )
 
-    if data_args.do_train:
-        trainer.fit(model, datamodule=dm)
+    if train_datasets:
+        trainer.fit(model, train_dataloaders=train_datasets, val_dataloaders=eval_datasets)
 
-    if data_args.do_eval:
-        trainer.validate(model, datamodule=dm)
+    if eval_datasets:
+        trainer.validate(model, dataloaders=eval_datasets)
 
-    if data_args.do_test:
-        trainer.test(model, datamodule=dm)
+    if test_datasets:
+        trainer.test(model, dataloaders=test_datasets)

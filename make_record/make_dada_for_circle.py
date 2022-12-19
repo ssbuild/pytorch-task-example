@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
-from deep_training.data_helper import make_dataset_with_args, load_tokenizer_and_config_with_args
+from deep_training.data_helper import load_tokenizer_and_config_with_args
 from transformers import HfArgumentParser, BertTokenizer
 from fastdatasets import gfile
 
@@ -144,13 +144,13 @@ if __name__ == '__main__':
         intermediate_name = data_args.intermediate_name + '_{}'.format(i)
         if data_args.do_train:
             train_files.append(
-                make_dataset_with_args(dataHelper, data_args.train_file, token_fn_args_dict['train'], data_args,
+                dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'], data_args,
                                        intermediate_name=intermediate_name, shuffle=True, mode='train'))
         if data_args.do_eval:
             eval_files.append(
-                make_dataset_with_args(dataHelper, data_args.eval_file, token_fn_args_dict['eval'], data_args,
+                dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='eval'))
         if data_args.do_test:
             test_files.append(
-                make_dataset_with_args(dataHelper, data_args.test_file, token_fn_args_dict['test'], data_args,
+                dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))

@@ -3,9 +3,8 @@ import json
 import os
 import sys
 import typing
-
+from torch.utils.data import DataLoader, IterableDataset
 from deep_training.nlp.models.transformer import TransformerMeta
-
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from seqmetric.metrics import f1_score, classification_report
@@ -16,8 +15,7 @@ from deep_training.data_helper import DataHelper
 from transformers import HfArgumentParser, BertTokenizer
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments,PrefixModelArguments
 from pytorch_lightning import Trainer
-from deep_training.data_helper import make_dataset_with_args, load_dataset_with_args, \
-    load_tokenizer_and_config_with_args
+from deep_training.data_helper import load_tokenizer_and_config_with_args
 
 from deep_training.nlp.models.prefixtuning import PrefixTransformerForCRF
 
@@ -214,7 +212,17 @@ if __name__== '__main__':
             test_files.append(make_dataset_with_args(dataHelper, data_args.test_file, token_fn_args_dict['test'], data_args,
                                                      intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    dm = load_dataset_with_args(dataHelper, training_args, train_files, eval_files, test_files)
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True)
+    eval_datasets = dataHelper.load_dataset(eval_files)
+    test_datasets = dataHelper.load_dataset(test_files)
+    if train_datasets:
+        train_datasets = DataLoader(train_datasets,batch_size=training_args.train_batch_size,collate_fn=dataHelper.collate_fn,shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+    if eval_datasets:
+        eval_datasets = DataLoader(eval_datasets,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+    if test_datasets:
+        test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
+
+    print('*' * 30,train_datasets,eval_datasets,test_datasets)
     model = MyTransformer(prompt_args=prompt_args,config=config,model_args=model_args,training_args=training_args)
     checkpoint_callback = ModelCheckpoint(monitor="val_f1", every_n_epochs=1)
     trainer = Trainer(
@@ -230,11 +238,11 @@ if __name__== '__main__':
         num_sanity_val_steps=0,
     )
 
-    if data_args.do_train:
-        trainer.fit(model, datamodule=dm)
+    if train_datasets:
+        trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
 
-    if data_args.do_eval:
-        trainer.validate(model, datamodule=dm)
+    if eval_datasets:
+        trainer.validate(model, dataloaders=eval_datasets)
 
-    if data_args.do_test:
-        trainer.test(model, datamodule=dm)
+    if test_datasets:
+        trainer.test(model, dataloaders=test_datasets)
