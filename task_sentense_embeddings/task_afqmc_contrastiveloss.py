@@ -193,7 +193,7 @@ if __name__== '__main__':
     if train_datasets:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else False)
     if eval_datasets:
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
                                    collate_fn=dataHelper.collate_fn)

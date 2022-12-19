@@ -164,7 +164,7 @@ if __name__== '__main__':
                 dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    train_datasets = dataHelper.load_dataset(train_files, shuffle=False)
+    train_datasets = dataHelper.load_dataset(train_files, shuffle=True)
     eval_datasets = dataHelper.load_dataset(eval_files)
     test_datasets = dataHelper.load_dataset(test_files)
     if train_datasets:
