@@ -143,11 +143,39 @@ class MyTransformer(TransformerForMaskLM,metaclass=TransformerMeta):
         return outputs
 
 
+def get_trainer():
+    checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=10, every_n_train_steps=1000)
+    trainer = Trainer(
+        callbacks=[checkpoint_callback],
+        max_epochs=training_args.max_epochs,
+        max_steps=training_args.max_steps,
+        accelerator="gpu",
+        devices=data_args.devices,
+        enable_progress_bar=True,
+        default_root_dir=data_args.output_dir,
+        gradient_clip_val=training_args.max_grad_norm,
+        accumulate_grad_batches=training_args.gradient_accumulation_steps
+    )
+
+    # Available names: bagua, colossalai, ddp, ddp_find_unused_parameters_false, ddp_fork,
+    # ddp_fork_find_unused_parameters_false, ddp_fully_sharded,
+    # ddp_notebook, ddp_notebook_find_unused_parameters_false, ddp_sharded,
+    # ddp_sharded_find_unused_parameters_false, ddp_sharded_spawn,
+    # ddp_sharded_spawn_find_unused_parameters_false,
+    # ddp_spawn, ddp_spawn_find_unused_parameters_false,
+    # deepspeed, deepspeed_stage_1, deepspeed_stage_2, deepspeed_stage_2_offload,
+    # deepspeed_stage_3, deepspeed_stage_3_offload, deepspeed_stage_3_offload_nvme,
+    # dp, fsdp, fsdp_native, fsdp_native_full_shard_offload, horovod, hpu_parallel,
+    # hpu_single, ipu_strategy, single_device, single_tpu, tpu_spawn, tpu_spawn_debug"
+
+    return trainer
+
 if __name__== '__main__':
 
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,MlmDataArguments))
     model_args, training_args, data_args, mlm_data_args = parser.parse_dict(train_info_args)
 
+    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
                                                                                 data_args)
@@ -187,37 +215,24 @@ if __name__== '__main__':
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
     print(train_files, eval_files, test_files)
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True)
-    eval_datasets = dataHelper.load_dataset(eval_files)
-    test_datasets = dataHelper.load_dataset(test_files)
-    if train_datasets:
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    if train_datasets is not None:
         train_datasets = DataLoader(train_datasets,batch_size=training_args.train_batch_size,collate_fn=dataHelper.collate_fn,shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-    if eval_datasets:
+    if eval_datasets is not None:
         eval_datasets = DataLoader(eval_datasets,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-    if test_datasets:
+    if test_datasets is not None:
         test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
 
-    print('*' * 30,train_datasets,eval_datasets,test_datasets)
-    
-    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=10, every_n_train_steps=1000)
-    trainer = Trainer(
-        callbacks=[checkpoint_callback],
-        max_epochs=training_args.max_epochs,
-        max_steps=training_args.max_steps,
-        accelerator="gpu",
-        devices=data_args.devices,  
-        enable_progress_bar=True,
-        default_root_dir=data_args.output_dir,
-        gradient_clip_val=training_args.max_grad_norm,
-        accumulate_grad_batches = training_args.gradient_accumulation_steps
-    )
 
-    if train_datasets:
+    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
+
+    if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
 
-    if eval_datasets:
+    if eval_datasets is not None:
         trainer.validate(model, dataloaders=eval_datasets)
 
-    if test_datasets:
+    if test_datasets is not None:
         trainer.test(model, dataloaders=test_datasets)

@@ -150,11 +150,28 @@ class MyTransformer(PrefixTransformerPointer, metaclass=TransformerMeta):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.model.eval_labels = eval_labels
 
+def get_trainer():
+    checkpoint_callback = ModelCheckpoint(monitor='val_f1', save_top_k=1, every_n_epochs=1)
+    trainer = Trainer(
+        log_every_n_steps=10,
+        callbacks=[checkpoint_callback],
+        max_epochs=training_args.max_epochs,
+        max_steps=training_args.max_steps,
+        accelerator="gpu",
+        devices=data_args.devices,
+        enable_progress_bar=True,
+        default_root_dir=data_args.output_dir,
+        gradient_clip_val=training_args.max_grad_norm,
+        accumulate_grad_batches=training_args.gradient_accumulation_steps,
+        num_sanity_val_steps=0,
+    )
+    return trainer
 
 if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments, PrefixModelArguments))
     model_args, training_args, data_args, prompt_args = parser.parse_dict(train_info_args)
 
+    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
 
@@ -182,38 +199,24 @@ if __name__== '__main__':
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True)
-    eval_datasets = dataHelper.load_dataset(eval_files)
-    test_datasets = dataHelper.load_dataset(test_files)
-    if train_datasets:
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    if train_datasets is not None:
         train_datasets = DataLoader(train_datasets,batch_size=training_args.train_batch_size,collate_fn=dataHelper.collate_fn,shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-    if eval_datasets:
+    if eval_datasets is not None:
         eval_datasets = DataLoader(eval_datasets,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-    if test_datasets:
+    if test_datasets is not None:
         test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
 
-    print('*' * 30,train_datasets,eval_datasets,test_datasets)
 
     model = MyTransformer(dataHelper.eval_labels,with_efficient=True,prompt_args=prompt_args,config=config,model_args=model_args,training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="val_f1",  every_n_epochs=1)
-    trainer = Trainer(
-        callbacks=[checkpoint_callback],
-         max_epochs=training_args.max_epochs,
-        max_steps=training_args.max_steps,
-        accelerator="gpu",
-        devices=data_args.devices,  
-        enable_progress_bar=True,
-        default_root_dir=data_args.output_dir,
-        gradient_clip_val=training_args.max_grad_norm,
-        accumulate_grad_batches = training_args.gradient_accumulation_steps,
-        num_sanity_val_steps=0,
-    )
 
-    if train_datasets:
+    if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
 
-    if eval_datasets:
+    if eval_datasets is not None:
         trainer.validate(model, dataloaders=eval_datasets)
 
-    if test_datasets:
+    if test_datasets is not None:
         trainer.test(model, dataloaders=test_datasets)

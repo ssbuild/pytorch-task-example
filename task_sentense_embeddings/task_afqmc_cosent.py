@@ -3,17 +3,20 @@ import json
 import typing
 
 import numpy as np
+import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.loss_cosent import CoSentLoss
+from deep_training.nlp.losses.loss_cosent import CoSentLoss,cat_even_odd_reorder
 from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
 from deep_training.utils.func import seq_pading
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
+from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
@@ -24,9 +27,13 @@ train_info_args = {
     'tokenizer_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
-    'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
-    'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
-    'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
+    'do_eval': True,
+    # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
+    # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
+    # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
     'optimizer': 'adamw',
     'learning_rate':5e-5,
     'max_epochs':3,
@@ -57,7 +64,7 @@ class NN_DataHelper(DataHelper):
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
 
         sentence1,sentence2,label_str = data
-        labels = np.asarray(1 - label2id[label_str] if label_str is not None else 0, dtype=np.int64)
+        labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
 
         input_ids, attention_mask, seqlen = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
         input_ids_2, attention_mask_2, seqlen_2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
@@ -85,11 +92,17 @@ class NN_DataHelper(DataHelper):
         for filename in files:
             with open(filename, mode='r', encoding='utf-8') as f:
                 lines = f.readlines()
-                for line in lines:
-                    jd = json.loads(line)
-                    if not jd:
-                        continue
-                    D.append((jd['sentence1'],jd['sentence2'], jd.get('label',None)))
+                if filename.endswith('.json'):
+                    for line in lines:
+                        jd = json.loads(line)
+                        if not jd:
+                            continue
+                        D.append((jd['sentence1'],jd['sentence2'], jd.get('label',None)))
+                else:
+                    for line in lines:
+                        line = line.replace('\r\n','').replace('\n','')
+                        s1,s2,l = line.split('\t',2)
+                        D.append((s1,s2,l))
         return D
 
 
@@ -115,8 +128,22 @@ class NN_DataHelper(DataHelper):
         max_len = torch.max(seqlen)
         o['input_ids_2'] = o['input_ids_2'][:, :max_len]
         o['attention_mask_2'] = o['attention_mask_2'][:, :max_len]
-
         return o
+
+
+
+def transform_and_normalize(vecs, kernel=None, bias=None):
+    """应用变换，然后标准化
+    """
+    if not (kernel is None or bias is None):
+        vecs = (vecs + bias).dot(kernel)
+    norms = (vecs**2).sum(axis=1, keepdims=True)**0.5
+    return vecs / np.clip(norms, 1e-8, np.inf)
+
+def compute_corrcoef(x, y):
+    """Spearman相关系数
+    """
+    return scipy.stats.spearmanr(x, y).correlation
 
 class MyTransformer(TransformerModel, metaclass=TransformerMeta):
     def __init__(self,*args,**kwargs):
@@ -127,12 +154,13 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
-            (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
+            (self.feat_head, self.config.task_specific_params['learning_rate_for_task']),
+            (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
     def compute_loss(self,batch,batch_idx):
         labels: torch.Tensor = batch.pop('labels',None)
-        if self.training:
+        if labels is not None:
             batch2 = {
                 "input_ids": batch.pop('input_ids_2'),
                 "attention_mask": batch.pop('attention_mask_2'),
@@ -140,31 +168,62 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         logits1 = self.feat_head(self(**batch)[0][:, 0, :])
         if labels is not None:
             labels = labels.float()
+            labels = torch.unsqueeze(labels,1)
             logits2 = self.feat_head(self(**batch2)[0][:, 0, :])
-
-            mid_logits = torch.cat([logits1, logits2],dim=1)
-            index = torch.arange(0, mid_logits.size(0))
-            index = torch.cat([index[::2], index[1::2]])
-            index = torch.unsqueeze(index, 1).expand(*mid_logits.size())
-            mid_logits_state = torch.zeros_like(mid_logits)
-            mid_logits_state = torch.scatter(mid_logits_state, dim=0, index=index, src=mid_logits)
-
-            loss = self.loss_fn(mid_logits_state, labels)
-            outputs = (loss,logits1,logits2)
+            #重排序
+            mid_logits_state = cat_even_odd_reorder(logits1,logits2)
+            labels_state = cat_even_odd_reorder(labels, labels)
+            loss = self.loss_fn(labels_state,mid_logits_state)
+            outputs = (loss,logits1,logits2,labels)
         else:
             outputs = (logits1, )
         return outputs
 
 
+    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
+        print('validation_epoch_end...')
+        a_logits_all,b_logits_all,labels_all = None,None,None
+        for i, o in tqdm(enumerate(outputs), total=len(outputs)):
+            a_logits, b_logits, labels = o['outputs']
+            if a_logits_all is None:
+                a_logits_all = a_logits
+                b_logits_all = b_logits
+                labels_all = labels
+            else:
+                a_logits_all = np.concatenate([a_logits_all,a_logits],axis=0)
+                b_logits_all = np.concatenate([b_logits_all, b_logits], axis=0)
+                labels_all = np.concatenate([labels_all, labels], axis=0)
+
+        a_vecs = transform_and_normalize(a_logits_all)
+        b_vecs = transform_and_normalize(b_logits_all)
+        sims = (a_vecs * b_vecs).sum(axis=1)
+        corrcoef = compute_corrcoef(labels_all, sims)
+
+        print('*' * 30,corrcoef)
+        self.log('corrcoef',corrcoef,prog_bar=True)
 
 
-
-
+def get_trainer():
+    checkpoint_callback = ModelCheckpoint(monitor="corrcoef", every_n_epochs=1)
+    trainer = Trainer(
+        callbacks=[checkpoint_callback],
+        max_epochs=training_args.max_epochs,
+        max_steps=training_args.max_steps,
+        accelerator="gpu",
+        devices=data_args.devices,
+        enable_progress_bar=True,
+        default_root_dir=data_args.output_dir,
+        gradient_clip_val=training_args.max_grad_norm,
+        accumulate_grad_batches=training_args.gradient_accumulation_steps,
+        num_sanity_val_steps=0,
+    )
+    return trainer
 
 if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments,DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
+    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
 
@@ -191,42 +250,28 @@ if __name__== '__main__':
                 dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    train_datasets = dataHelper.load_dataset(train_files, shuffle=True)
-    eval_datasets = dataHelper.load_dataset(eval_files)
-    test_datasets = dataHelper.load_dataset(test_files)
-    if train_datasets:
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-    if eval_datasets:
+    if eval_datasets is not None:
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
                                    collate_fn=dataHelper.collate_fn)
-    if test_datasets:
+    if test_datasets is not None:
         test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                    collate_fn=dataHelper.collate_fn)
 
-    print('*' * 30, train_datasets, eval_datasets, test_datasets)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
-    checkpoint_callback = ModelCheckpoint(monitor="val_loss", every_n_epochs=1)
-    trainer = Trainer(
-        callbacks=[checkpoint_callback],
-        max_epochs=training_args.max_epochs,
-        max_steps=training_args.max_steps,
-        accelerator="gpu",
-        devices=data_args.devices,  
-        enable_progress_bar=True,
-        default_root_dir=data_args.output_dir,
-        gradient_clip_val=training_args.max_grad_norm,
-        accumulate_grad_batches=training_args.gradient_accumulation_steps,
-        num_sanity_val_steps=0,
-    )
 
-    if train_datasets:
+    if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
 
-    if eval_datasets:
+    if eval_datasets is not None:
         trainer.validate(model, dataloaders=eval_datasets)
 
-    if test_datasets:
+    if test_datasets is not None:
         trainer.test(model, dataloaders=test_datasets)
