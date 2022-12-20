@@ -23,8 +23,8 @@ from torch import nn
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
-model_base_dir = '/data/torch/bert-base-chinese'
-# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+# model_base_dir = '/data/torch/bert-base-chinese'
+model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -257,6 +257,7 @@ def get_trainer():
         num_sanity_val_steps=0,
         strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
+    print('*' * 30,trainer.world_size,trainer.global_rank)
     return trainer
 
 if __name__ == '__main__':
