@@ -131,7 +131,6 @@ def choise_samples(vec_maps : dict):
     a_vecs = []
     b_vecs = []
     for k in vec_maps:
-        print(k, len(vec_maps[k]))
         obj_list = vec_maps[k]
         val = [obj_list[ids]
                for ids in
@@ -201,7 +200,7 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
 
 
     def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        print('test_epoch_end...')
+        print('validation_epoch_end...')
         vec_maps = {}
         for i, o in tqdm(enumerate(outputs), total=len(outputs)):
             b_logits, b_labels = o['outputs']
@@ -243,26 +242,12 @@ def get_trainer():
         num_sanity_val_steps=0,
         strategy='ddp' if torch.cuda.device_count() else None,
     )
-
-    # Available names: bagua, colossalai, ddp, ddp_find_unused_parameters_false, ddp_fork,
-    # ddp_fork_find_unused_parameters_false, ddp_fully_sharded,
-    # ddp_notebook, ddp_notebook_find_unused_parameters_false, ddp_sharded,
-    # ddp_sharded_find_unused_parameters_false, ddp_sharded_spawn,
-    # ddp_sharded_spawn_find_unused_parameters_false,
-    # ddp_spawn, ddp_spawn_find_unused_parameters_false,
-    # deepspeed, deepspeed_stage_1, deepspeed_stage_2, deepspeed_stage_2_offload,
-    # deepspeed_stage_3, deepspeed_stage_3_offload, deepspeed_stage_3_offload_nvme,
-    # dp, fsdp, fsdp_native, fsdp_native_full_shard_offload, horovod, hpu_parallel,
-    # hpu_single, ipu_strategy, single_device, single_tpu, tpu_spawn, tpu_spawn_debug"
-
     return trainer
 
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-
-    trainer = get_trainer()
     trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
@@ -291,7 +276,7 @@ if __name__ == '__main__':
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True)
     eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
     test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
 
