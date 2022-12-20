@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import os.path
 import typing
 
 import numpy as np
+import pytorch_lightning
 import scipy
 import torch
+from lightning_lite.plugins import CheckpointIO
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from deep_training.data_helper import DataHelper
@@ -19,7 +22,6 @@ from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch import nn
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
-
 
 model_base_dir = '/data/torch/bert-base-chinese'
 # model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
@@ -42,7 +44,7 @@ train_info_args = {
     'label_file': '',
     'learning_rate': 5e-5,
     'max_steps':  120000,
-    'max_epochs': -1,
+    'max_epochs': 1,
     'train_batch_size': 10,
     'eval_batch_size': 10,
     'test_batch_size': 10,
@@ -171,7 +173,7 @@ def choise_samples(vec_maps : dict):
     labels = np.stack(labels, axis=0)
     return a_vecs,b_vecs,labels
 
-class MyTransformer(TransformerModel, metaclass=TransformerMeta):
+class MyTransformer(TransformerModel,pytorch_lightning.LightningModule, metaclass=TransformerMeta):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
@@ -220,17 +222,30 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         sims = (a_vecs * b_vecs).sum(axis=1)
         corrcoef = compute_corrcoef(labels, sims)
 
-        print(corrcoef)
-        self.log('corrcoef',corrcoef,prog_bar=True)
+
+        self.log('corrcoef',corrcoef,prog_bar=True,sync_dist=True)
+
+        if not hasattr(self,'val_f1'):
+            self.val_f1 = corrcoef
+
+        print('current',corrcoef,'best',self.val_f1)
+
+        if corrcoef >= self.val_f1:
+            self.val_f1 = corrcoef
+            weight_file = os.path.join(self.training_args.output_dir,'best.pt')
+            logging.info('save best...')
+            self.trainer.save_checkpoint(weight_file)
+
+
 
 
 def get_trainer():
-    checkpoint_callback = ModelCheckpoint(monitor="corrcoef",
-                                          every_n_train_steps=5000,
-                                          save_top_k=3)
+    # checkpoint_callback = ModelCheckpoint(monitor="corrcoef",
+    #                                       every_n_train_steps=5000,
+    #                                       save_top_k=3)
     trainer = Trainer(
         val_check_interval=5000,
-        callbacks=[checkpoint_callback],
+        # callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
         accelerator="gpu",
@@ -240,7 +255,7 @@ def get_trainer():
         gradient_clip_val=training_args.max_grad_norm,
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
-        strategy='ddp' if torch.cuda.device_count() else None,
+        strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
     return trainer
 
