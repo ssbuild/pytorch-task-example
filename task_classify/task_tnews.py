@@ -225,7 +225,7 @@ if __name__== '__main__':
     if test_datasets is not None:
         test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                    collate_fn=dataHelper.collate_fn)
-    print('*' * 30, train_datasets, eval_datasets, test_datasets)
+    
 
     model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
    
