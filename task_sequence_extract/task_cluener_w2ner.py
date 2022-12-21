@@ -298,7 +298,7 @@ class MyCheckpointCallback(CheckpointCallback):
         print('current', f1, 'best', self.best['f1'])
         if f1 >= self.best['f1']:
             self.best['f1'] = f1
-            logging.info('save best {}, {}...'.format(self.best['f1'], self.weight_file))
+            logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
 
 
