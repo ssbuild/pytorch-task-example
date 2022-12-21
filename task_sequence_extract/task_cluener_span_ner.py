@@ -291,6 +291,7 @@ if __name__ == '__main__':
         gradient_clip_val=training_args.max_grad_norm,
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
+        strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
     #with_mutilabel 是否多标签
     dataHelper = NN_DataHelper(with_mutilabel,data_args.data_backend)
