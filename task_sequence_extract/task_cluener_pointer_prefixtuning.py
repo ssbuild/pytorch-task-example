@@ -175,9 +175,9 @@ class MyCheckpointCallback(CheckpointCallback):
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
                                    collate_fn=dataHelper.collate_fn)
 
-        top_n = 1
+
         threshold = 1e-8
-        eval_labels = pl_module.eval_labels
+        # eval_labels = pl_module.eval_labels
         config = pl_module.config
 
         y_preds, y_trues = [], []
