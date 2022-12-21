@@ -238,7 +238,7 @@ class MyCheckpointCallback(CheckpointCallback):
 
         #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_dataset(data_args.eval_file)
+        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
         # eval_labels = pl_module.eval_labels
