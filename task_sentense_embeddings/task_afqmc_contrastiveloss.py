@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import typing
 
 import numpy as np
+import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
@@ -10,10 +12,12 @@ from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.ContrastiveLoss import ContrastiveLoss
 from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
 from deep_training.utils.func import seq_pading
+from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
+from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
@@ -148,16 +152,74 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         return outputs
 
 
+def transform_and_normalize(vecs, kernel=None, bias=None):
+    """应用变换，然后标准化
+    """
+    if not (kernel is None or bias is None):
+        vecs = (vecs + bias).dot(kernel)
+    norms = (vecs**2).sum(axis=1, keepdims=True)**0.5
+    return vecs / np.clip(norms, 1e-8, np.inf)
+
+def compute_corrcoef(x, y):
+    """Spearman相关系数
+    """
+    return scipy.stats.spearmanr(x, y).correlation
+
+class MyCheckpointCallback(CheckpointCallback):
+    def __init__(self,*args,**kwargs):
+        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
+        self.weight_file = './best.pt'
+
+    def on_save_model(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        pl_module: MyTransformer
+
+        #当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+        eval_datasets = dataHelper.load_dataset(data_args.eval_file)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+        a_vecs, b_vecs, labels = [],[],[]
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+            for k in batch:
+                batch[k] = batch[k].to(device)
+            o = pl_module.validation_step(batch,i)
+            a_logits,b_logits, b_labels = o['outputs']
+            for j in range(len(b_logits)):
+                logit1 = np.asarray(a_logits[j], dtype=np.float32)
+                logit2 = np.asarray(b_logits[j], dtype=np.float32)
+                label = np.asarray(b_labels[j], dtype=np.int32)
+
+                a_vecs.append(logit1)
+                b_vecs.append(logit2)
+                labels.append(label)
 
 
+        a_vecs = np.stack(a_vecs,axis=0)
+        b_vecs = np.stack(b_vecs,axis=0)
+        labels =  np.stack(labels,axis=0)
 
+        a_vecs = transform_and_normalize(a_vecs)
+        b_vecs = transform_and_normalize(b_vecs)
+        sims = (a_vecs * b_vecs).sum(axis=1)
+        corrcoef = compute_corrcoef(labels, sims)
+        f1 = corrcoef
+
+        if not hasattr(self.best, 'f1'):
+            self.best['f1'] = f1
+        print('current', f1, 'best', self.best['f1'])
+        if f1 >= self.best['f1']:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}...'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
 
 
 if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments,DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_epochs=1)
+    checkpoint_callback = MyCheckpointCallback(monitor="loss", every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
