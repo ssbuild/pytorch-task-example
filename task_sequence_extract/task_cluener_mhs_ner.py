@@ -258,8 +258,13 @@ class MyCheckpointCallback(CheckpointCallback):
             logging.info('save best {}, {}...'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
 
-def get_trainer():
-    checkpoint_callback = ModelCheckpoint(monitor='val_f1', save_top_k=1, every_n_epochs=1)
+
+
+if __name__ == '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
+    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+
+    checkpoint_callback = MyCheckpointCallback(monitor='val_f1', every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=10,
         callbacks=[checkpoint_callback],
@@ -274,13 +279,6 @@ def get_trainer():
         num_sanity_val_steps=0,
     )
 
-    return trainer
-
-if __name__ == '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
 

@@ -203,7 +203,11 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         self.log('corrcoef',corrcoef,prog_bar=True)
 
 
-def get_trainer():
+
+if __name__== '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments,DataArguments))
+    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+
     checkpoint_callback = ModelCheckpoint(monitor="corrcoef", every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
@@ -217,13 +221,7 @@ def get_trainer():
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
     )
-    return trainer
 
-if __name__== '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments,DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
 
