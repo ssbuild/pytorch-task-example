@@ -320,6 +320,10 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True)
+    if train_datasets is not None:
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
