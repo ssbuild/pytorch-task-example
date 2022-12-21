@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import json
 import logging
 import os.path
 import typing
@@ -8,18 +7,16 @@ import numpy as np
 import pytorch_lightning
 import scipy
 import torch
-from lightning_lite.plugins import CheckpointIO
+from torch import nn
 from torch.nn import functional as F
-from torch.utils.data import DataLoader, IterableDataset
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.circle_loss import CircleLoss
-from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta, TransformerLightningModule
+from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
-from torch import nn
+from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
@@ -32,7 +29,7 @@ train_info_args = {
     'model_type': 'bert',
     'model_name_or_path': model_base_dir,
     'tokenizer_name': model_base_dir,
-    'config_name': os.path.join(model_base_dir,'config.json'),
+    'config_name': os.path.join(model_base_dir, 'config.json'),
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
@@ -43,7 +40,7 @@ train_info_args = {
     # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
     'label_file': '',
     'learning_rate': 5e-5,
-    'max_steps':  120000,
+    'max_steps': 120000,
     'max_epochs': 1,
     'train_batch_size': 10,
     'eval_batch_size': 10,
@@ -90,7 +87,6 @@ class NN_DataHelper(DataHelper):
     def on_get_labels(self, files: typing.List[str]):
         return None, None
 
-
     @staticmethod
     def collate_fn(batch):
         o = {}
@@ -104,7 +100,7 @@ class NN_DataHelper(DataHelper):
         for k in o:
             o[k] = torch.stack(o[k])
 
-        o.pop('id',None)
+        o.pop('id', None)
         max_len = torch.max(o.pop('seqlen'))
 
         o['input_ids'] = o['input_ids'][:, :max_len]
@@ -120,18 +116,18 @@ def transform_and_normalize(vecs, kernel=None, bias=None):
     """
     if not (kernel is None or bias is None):
         vecs = (vecs + bias).dot(kernel)
-    norms = (vecs**2).sum(axis=1, keepdims=True)**0.5
+    norms = (vecs ** 2).sum(axis=1, keepdims=True) ** 0.5
     return vecs / np.clip(norms, 1e-8, np.inf)
+
 
 def compute_corrcoef(x, y):
     """Spearman相关系数
     """
     return scipy.stats.spearmanr(x, y).correlation
 
-def choise_samples(vec_maps : dict):
-    labels = []
-    a_vecs = []
-    b_vecs = []
+
+def choise_samples(vec_maps: dict):
+    a_vecs,b_vecs,labels = [],[],[]
     for k in vec_maps:
         obj_list = vec_maps[k]
         val = [obj_list[ids]
@@ -171,15 +167,14 @@ def choise_samples(vec_maps : dict):
     a_vecs = np.stack(a_vecs, axis=0)
     b_vecs = np.stack(b_vecs, axis=0)
     labels = np.stack(labels, axis=0)
-    return a_vecs,b_vecs,labels
+    return a_vecs, b_vecs, labels
 
-class MyTransformer(TransformerModel,pytorch_lightning.LightningModule, metaclass=TransformerMeta):
+
+class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, metaclass=TransformerMeta):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
         self.loss_fn = CircleLoss(m=0.25, gamma=64)
-
-
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
@@ -200,7 +195,6 @@ class MyTransformer(TransformerModel,pytorch_lightning.LightningModule, metaclas
             outputs = (logits,)
         return outputs
 
-
     def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
         print('validation_epoch_end...')
         vec_maps = {}
@@ -216,28 +210,27 @@ class MyTransformer(TransformerModel,pytorch_lightning.LightningModule, metaclas
                 vec_maps[label].append(logit)
         eval_samples = choise_samples(vec_maps)
 
-        a_vecs,b_vecs,labels = eval_samples
+        a_vecs, b_vecs, labels = eval_samples
         a_vecs = transform_and_normalize(a_vecs)
         b_vecs = transform_and_normalize(b_vecs)
         sims = (a_vecs * b_vecs).sum(axis=1)
         corrcoef = compute_corrcoef(labels, sims)
 
+        self.log('corrcoef', corrcoef, prog_bar=True, sync_dist=True)
+        f1 = corrcoef
 
-        self.log('corrcoef',corrcoef,prog_bar=True,sync_dist=True)
+        if not hasattr(self, 'val_f1'):
+            self.val_f1 = f1
+        print('current', f1, 'best', self.val_f1)
+        if f1 >= self.val_f1:
+            self.val_f1 = f1
+            logging.info('save best {}, {}...'.format(self.val_f1,self.weight_file))
+            self.trainer.save_checkpoint(self.weight_file)
 
-        if not hasattr(self,'val_f1'):
-            self.val_f1 = corrcoef
-
-        print('current',corrcoef,'best',self.val_f1)
-
-        if corrcoef >= self.val_f1:
-            self.val_f1 = corrcoef
-            weight_file = os.path.join(self.training_args.output_dir,'best.pt')
-            logging.info('save best...')
-            self.trainer.save_checkpoint(weight_file)
-
-
-
+    @property
+    def weight_file(self):
+        weight_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'best.pt')
+        return weight_file
 
 def get_trainer():
     # checkpoint_callback = ModelCheckpoint(monitor="corrcoef",
@@ -257,8 +250,8 @@ def get_trainer():
         num_sanity_val_steps=0,
         strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
-    print('*' * 30,trainer.world_size,trainer.global_rank)
     return trainer
+
 
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
@@ -266,7 +259,8 @@ if __name__ == '__main__':
 
     trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
+    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
+                                                                                data_args)
 
     token_fn_args_dict = {
         'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
@@ -281,29 +275,33 @@ if __name__ == '__main__':
         if data_args.do_train:
             train_files.append(
                 dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=True, mode='train'))
+                                                  intermediate_name=intermediate_name, shuffle=True, mode='train'))
         if data_args.do_eval:
             eval_files.append(
                 dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='eval'))
+                                                  intermediate_name=intermediate_name, shuffle=False, mode='eval'))
         if data_args.do_test:
             test_files.append(
                 dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='test'))
+                                                  intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True)
-    eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
-    test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    train_datasets = dataHelper.load_dataset(train_files, shuffle=True, num_processes=trainer.world_size,
+                                             process_index=trainer.global_rank, infinite=True)
+    eval_datasets = dataHelper.load_dataset(eval_files, num_processes=trainer.world_size,
+                                            process_index=trainer.global_rank)
+    test_datasets = dataHelper.load_dataset(test_files, num_processes=trainer.world_size,
+                                            process_index=trainer.global_rank)
 
     if train_datasets is not None:
-        train_datasets = DataLoader(train_datasets,batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
     if eval_datasets is not None:
-        eval_datasets = DataLoader(eval_datasets,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
     if test_datasets is not None:
-        test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
-
+        test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
@@ -312,7 +310,6 @@ if __name__ == '__main__':
                     train_dataloaders=train_datasets,
                     val_dataloaders=eval_datasets
                     )
-
 
     # if eval_datasets is not None:
     #     ckpt_path = 'output/lightning_logs/version_0/checkpoints/epoch=0-step=17000.ckpt'

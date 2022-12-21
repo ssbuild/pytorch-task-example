@@ -139,9 +139,7 @@ def compute_corrcoef(x, y):
     return scipy.stats.spearmanr(x, y).correlation
 
 def choise_samples(vec_maps : dict):
-    labels = []
-    a_vecs = []
-    b_vecs = []
+    a_vecs, b_vecs, labels = [], [], []
     for k in vec_maps:
         print(k, len(vec_maps[k]))
         obj_list = vec_maps[k]
@@ -225,8 +223,6 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         #         }
         #         f.write(obj)
         # f.close()
-
-
         vec_maps = {}
         for i, o in tqdm(enumerate(outputs), total=len(outputs)):
             b_logits, b_labels = o['outputs']
@@ -307,7 +303,7 @@ if __name__== '__main__':
     if test_datasets is not None:
         test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
 
-    print('*' * 30,train_datasets,eval_datasets,test_datasets)
+    
 
     model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
 
