@@ -298,7 +298,7 @@ class MyCheckpointCallback(CheckpointCallback):
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
-        # eval_labels = pl_module.eval_labels
+        eval_labels = pl_module.eval_labels
         config = pl_module.config
 
         y_preds, y_trues = [], []
@@ -309,7 +309,7 @@ class MyCheckpointCallback(CheckpointCallback):
 
             logits1, logits2, logits3, _, _, _ = o['outputs']
             bs = len(logits1)
-            output_labels = self.eval_labels[i * bs:(i + 1) * bs]
+            output_labels = eval_labels[i * bs:(i + 1) * bs]
             p_spoes = extract_spoes([logits1, logits2, logits3])
             t_spoes = output_labels
             y_preds.extend(p_spoes)
