@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import typing
 
 import numpy as np
@@ -10,6 +11,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.circle_loss import CircleLoss
 from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
+from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
@@ -211,7 +213,7 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         return outputs
 
     def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        print('test_epoch_end...')
+        print('validation_epoch_end...')
         # from fastdatasets.record import NumpyWriter
         # f = NumpyWriter('./eval_vecs.record')
         # for i, o in tqdm(enumerate(outputs), total=len(outputs)):
@@ -245,8 +247,58 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         print(corrcoef)
         self.log('corrcoef', corrcoef, prog_bar=True)
 
-def get_trainer():
-    checkpoint_callback = ModelCheckpoint(monitor="corrcoef", save_last=False, every_n_epochs=1)
+
+class MyCheckpointCallback(CheckpointCallback):
+    def __init__(self,*args,**kwargs):
+        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
+        self.weight_file = './best.pt'
+
+    def on_save_model(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        pl_module: MyTransformer
+
+        #当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+        eval_datasets = dataHelper.load_dataset(data_args.eval_file)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+        vec_maps = {}
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+            for k in batch:
+                batch[k] = batch[k].to(device)
+            o = pl_module.validation_step(batch,i)
+            b_logits, b_labels = o['outputs']
+            for j in range(len(b_logits)):
+                logit = np.asarray(b_logits[j], dtype=np.float32)
+                label = np.asarray(b_labels[j], dtype=np.int32)
+
+                label = label.squeeze().tolist()
+                if label not in vec_maps:
+                    vec_maps[label] = []
+                vec_maps[label].append(logit)
+        eval_samples = choise_samples_from_classvectors(vec_maps)
+
+        a_vecs, b_vecs, labels = eval_samples
+        a_vecs = transform_and_normalize(a_vecs)
+        b_vecs = transform_and_normalize(b_vecs)
+        sims = (a_vecs * b_vecs).sum(axis=1)
+        corrcoef = compute_corrcoef(labels, sims)
+        f1 = corrcoef
+
+        if not hasattr(self.best, 'f1'):
+            self.best['f1'] = f1
+        print('current', f1, 'best', self.best['f1'])
+        if f1 >= self.best['f1']:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}...'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
+
+if __name__== '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
+    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+
+    checkpoint_callback = MyCheckpointCallback(monitor="corrcoef", every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -260,13 +312,6 @@ def get_trainer():
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
     )
-    return trainer
-
-if __name__== '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
 
