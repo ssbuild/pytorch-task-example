@@ -12,7 +12,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.circle_loss import CircleLoss
 from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
-from deep_training.utils.trainer import AutoCheckpointCallback
+from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch import nn
@@ -219,9 +219,9 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, metacla
 
 
 
-class MyAutoCheckpointCallback(AutoCheckpointCallback):
+class MyCheckpointCallback(CheckpointCallback):
     def __init__(self,*args,**kwargs):
-        super(MyAutoCheckpointCallback, self).__init__(*args,**kwargs)
+        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
@@ -270,7 +270,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MyAutoCheckpointCallback(every_n_train_steps=100)
+    checkpoint_callback = MyCheckpointCallback(every_n_train_steps=100)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

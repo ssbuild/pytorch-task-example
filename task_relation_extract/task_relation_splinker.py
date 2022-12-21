@@ -1,24 +1,23 @@
 # -*- coding: utf-8 -*-
-import copy
 import json
-import os
-import sys
-from torch.utils.data import DataLoader, IterableDataset
-from deep_training.nlp.models.transformer import TransformerMeta
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
-
-from deep_training.nlp.models.splinker.splinker import extract_spoes
+import logging
 import typing
+
 import numpy as np
-from pytorch_lightning.callbacks import ModelCheckpoint
-from deep_training.data_helper import DataHelper
 import torch
-from pytorch_lightning import Trainer
-from deep_training.data_helper import load_tokenizer_and_config_with_args
-from transformers import HfArgumentParser, BertTokenizer
+from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
+from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.splinker import TransformerForSplinker
-from seqmetric.metrics.spo_labeling import spo_report,get_report_from_string
+from deep_training.nlp.models.splinker.splinker import extract_spoes
+from deep_training.nlp.models.transformer import TransformerMeta
+from deep_training.utils.trainer import CheckpointCallback
+from pytorch_lightning import Trainer
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT
+from seqmetric.metrics.spo_labeling import spo_report, get_report_from_string
+from torch.utils.data import DataLoader, IterableDataset
+from tqdm import tqdm
+from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
     'devices': 1,
@@ -210,7 +209,6 @@ class MyTransformer(TransformerForSplinker, metaclass=TransformerMeta):
             self.log('val_f1', 0.0)
             return
 
-
         y_preds, y_trues = [], []
         for o in outputs:
             logits, seqlen, labels = o['outputs']
@@ -227,8 +225,59 @@ class MyTransformer(TransformerForSplinker, metaclass=TransformerMeta):
         print(f1)
         self.log('val_f1', f1, prog_bar=True)
 
-def get_trainer():
-    checkpoint_callback = ModelCheckpoint(monitor="val_f1", every_n_epochs=1)
+
+class MyCheckpointCallback(CheckpointCallback):
+    def __init__(self,*args,**kwargs):
+        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
+        self.weight_file = './best.pt'
+
+    def on_save_model(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        pl_module: MyTransformer
+
+        #当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+        eval_datasets = dataHelper.load_dataset(data_args.eval_file)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+        # eval_labels = pl_module.eval_labels
+        config = pl_module.config
+
+        y_preds, y_trues = [], []
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+            for k in batch:
+                batch[k] = batch[k].to(device)
+            o = pl_module.validation_step(batch,i)
+
+            logits, seqlen, labels = o['outputs']
+            pred = extract_spoes(logits, seqlen, config.id2label)
+            true = extract_spoes(labels, seqlen, config.id2label)
+            y_preds.extend(pred)
+            y_trues.extend(true)
+
+        str_report = spo_report(y_trues, y_preds, config.label2id, col_space=10)
+        report = get_report_from_string(str_report, metric='macro')
+        f1 = report[-2]
+        print(str_report)
+        print(f1)
+
+
+        if not hasattr(self.best, 'f1'):
+            self.best['f1'] = f1
+        print('current', f1, 'best', self.best['f1'])
+        if f1 >= self.best['f1']:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}...'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
+
+
+
+if __name__ == '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
+    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+
+    checkpoint_callback = MyCheckpointCallback(monitor="val_f1", every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
@@ -241,13 +290,7 @@ def get_trainer():
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
     )
-    return trainer
 
-if __name__ == '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
                                                                                 data_args)
@@ -257,41 +300,49 @@ if __name__ == '__main__':
         'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
     }
 
-    N = 1
-    train_files, eval_files, test_files = [], [], []
-    for i in range(N):
-        intermediate_name = data_args.intermediate_name + '_{}'.format(i)
-        if data_args.do_train:
-            train_files.append(
-                dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=True, mode='train'))
-        if data_args.do_eval:
-            eval_files.append(
-                dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='eval'))
-        if data_args.do_test:
-            test_files.append(
-                dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='test'))
+    # 缓存数据集
+    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
+    if data_args.do_train:
+        dataHelper.train_files = dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
+                                                                   data_args,
+                                                                   intermediate_name=intermediate_name, shuffle=True,
+                                                                   mode='train')
+    if data_args.do_eval:
+        dataHelper.eval_files = dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
+                                                                  data_args,
+                                                                  intermediate_name=intermediate_name, shuffle=False,
+                                                                  mode='eval')
+    if data_args.do_test:
+        dataHelper.test_files = dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
+                                                                  data_args,
+                                                                  intermediate_name=intermediate_name, shuffle=False,
+                                                                  mode='test')
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True,with_record_iterable_dataset=True)
-    eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
-    test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
+                                             process_index=trainer.global_rank, infinite=True,
+                                             with_record_iterable_dataset=True)
+
     if train_datasets is not None:
-        train_datasets = DataLoader(train_datasets,batch_size=training_args.train_batch_size,collate_fn=dataHelper.collate_fn,shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-    if eval_datasets is not None:
-        eval_datasets = DataLoader(eval_datasets,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-    if test_datasets is not None:
-        test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
-
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
     
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
+
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
+    else:
+        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
+        test_datasets = dataHelper.load_dataset(dataHelper.test_files)
+        if eval_datasets is not None:
+            eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                       collate_fn=dataHelper.collate_fn)
+        if test_datasets is not None:
+            test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
+                                       collate_fn=dataHelper.collate_fn)
+        if eval_datasets is not None:
+            trainer.validate(model, dataloaders=eval_datasets)
 
-    if eval_datasets is not None:
-        trainer.validate(model, dataloaders=eval_datasets)
-
-    if test_datasets is not None:
-        trainer.test(model, dataloaders=test_datasets)
+        if test_datasets is not None:
+            trainer.test(model, dataloaders=test_datasets)

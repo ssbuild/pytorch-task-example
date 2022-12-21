@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import typing
 from functools import partial
 
@@ -11,10 +12,12 @@ from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.span_ner import TransformerForSpanNer, extract_lse_singlelabel, extract_lse_mutilabel
 from deep_training.nlp.models.transformer import TransformerMeta
+from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch.utils.data import DataLoader, IterableDataset
+from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
@@ -180,7 +183,7 @@ class MyTransformer(TransformerForSpanNer, metaclass=TransformerMeta):
         label2id = self.config.label2id
         threshold = 0.5
         top_n = 1 # 实体最大交叉包含， 1 不重叠
-        preds, trues = [], []
+        y_preds, y_trues = [], []
         eval_labels = self.eval_labels
 
         extract_lse = partial(extract_lse_mutilabel,threshold=threshold,top_n=top_n) if self.with_mutilabel else partial(extract_lse_singlelabel,top_n=top_n)
@@ -188,25 +191,94 @@ class MyTransformer(TransformerForSpanNer, metaclass=TransformerMeta):
         if self.with_mutilabel:
             for i, o in enumerate(outputs):
                 logits, _ = o['outputs']
-                preds.extend(extract_lse(logits))
+                y_preds.extend(extract_lse(logits))
                 bs = len(logits)
-                trues.extend(eval_labels[i * bs: (i + 1) * bs])
+                y_trues.extend(eval_labels[i * bs: (i + 1) * bs])
         else:
             for i, o in enumerate(outputs):
                 head_logits,tail_logits, _ = o['outputs']
-                preds.extend(extract_lse((head_logits,tail_logits)))
+                y_preds.extend(extract_lse((head_logits,tail_logits)))
                 bs = len(head_logits)
-                trues.extend(eval_labels[i * bs: (i + 1) * bs])
+                y_trues.extend(eval_labels[i * bs: (i + 1) * bs])
 
-        print(preds[:3])
-        print(trues[:3])
-        f1, str_report = metric_for_pointer(trues, preds, label2id)
+        print(y_preds[:3])
+        print(y_trues[:3])
+        f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)
         print(f1)
         print(str_report)
         self.log('val_f1', f1, prog_bar=True)
 
-def get_trainer():
-    checkpoint_callback = ModelCheckpoint(monitor='val_f1', save_top_k=1, every_n_epochs=1)
+class MyCheckpointCallback(CheckpointCallback):
+    def __init__(self,*args,**kwargs):
+        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
+        self.weight_file = './best.pt'
+
+    def on_save_model(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        pl_module: MyTransformer
+
+        #当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+        eval_datasets = dataHelper.load_dataset(data_args.eval_file)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+
+
+        eval_labels = pl_module.eval_labels
+        config = pl_module.config
+        with_mutilabel = pl_module.with_mutilabel
+
+        label2id = config.label2id
+        threshold = 0.5
+        top_n = 1  # 实体最大交叉包含， 1 不重叠
+
+
+        extract_lse = partial(extract_lse_mutilabel, threshold=threshold,
+                              top_n=top_n) if with_mutilabel else partial(extract_lse_singlelabel, top_n=top_n)
+
+        y_preds, y_trues = [], []
+        if with_mutilabel:
+            for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+                for k in batch:
+                    batch[k] = batch[k].to(device)
+                o = pl_module.validation_step(batch,i)
+                logits, _ = o['outputs']
+                y_preds.extend(extract_lse(logits))
+                bs = len(logits)
+                y_trues.extend(eval_labels[i * bs: (i + 1) * bs])
+        else:
+            for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
+                for k in batch:
+                    batch[k] = batch[k].to(device)
+                o = pl_module.validation_step(batch, i)
+                head_logits, tail_logits, _ = o['outputs']
+                y_preds.extend(extract_lse((head_logits, tail_logits)))
+                bs = len(head_logits)
+                y_trues.extend(eval_labels[i * bs: (i + 1) * bs])
+
+        print(y_preds[:3])
+        print(y_trues[:3])
+        f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)
+        print(f1)
+        print(str_report)
+
+
+        if not hasattr(self.best, 'f1'):
+            self.best['f1'] = f1
+        print('current', f1, 'best', self.best['f1'])
+        if f1 >= self.best['f1']:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}...'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
+
+
+
+if __name__ == '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
+    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+
+    checkpoint_callback = MyCheckpointCallback(monitor='val_f1', every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=10,
         callbacks=[checkpoint_callback],
@@ -220,13 +292,6 @@ def get_trainer():
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
     )
-    return trainer
-
-if __name__ == '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    trainer = get_trainer()
     #with_mutilabel 是否多标签
     dataHelper = NN_DataHelper(with_mutilabel,data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
@@ -237,41 +302,49 @@ if __name__ == '__main__':
         'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
     }
 
-    N = 1
-    train_files, eval_files, test_files = [], [], []
-    for i in range(N):
-        intermediate_name = data_args.intermediate_name + '_{}'.format(i)
-        if data_args.do_train:
-            train_files.append(
-                dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=True, mode='train'))
-        if data_args.do_eval:
-            eval_files.append(
-                dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='eval'))
-        if data_args.do_test:
-            test_files.append(
-                dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='test'))
+    # 缓存数据集
+    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
+    if data_args.do_train:
+        dataHelper.train_files = dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
+                                                                   data_args,
+                                                                   intermediate_name=intermediate_name, shuffle=True,
+                                                                   mode='train')
+    if data_args.do_eval:
+        dataHelper.eval_files = dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
+                                                                  data_args,
+                                                                  intermediate_name=intermediate_name, shuffle=False,
+                                                                  mode='eval')
+    if data_args.do_test:
+        dataHelper.test_files = dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
+                                                                  data_args,
+                                                                  intermediate_name=intermediate_name, shuffle=False,
+                                                                  mode='test')
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True,with_record_iterable_dataset=True)
-    eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
-    test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
+                                             process_index=trainer.global_rank, infinite=True,
+                                             with_record_iterable_dataset=True)
+
     if train_datasets is not None:
-        train_datasets = DataLoader(train_datasets,batch_size=training_args.train_batch_size,collate_fn=dataHelper.collate_fn,shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-    if eval_datasets is not None:
-        eval_datasets = DataLoader(eval_datasets,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-    if test_datasets is not None:
-        test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
 
     model = MyTransformer(dataHelper.eval_labels,with_mutilabel=with_mutilabel,config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
+    else:
+        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
+        test_datasets = dataHelper.load_dataset(dataHelper.test_files)
+        if eval_datasets is not None:
+            eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                       collate_fn=dataHelper.collate_fn)
+        if test_datasets is not None:
+            test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
+                                       collate_fn=dataHelper.collate_fn)
+        if eval_datasets is not None:
+            trainer.validate(model, dataloaders=eval_datasets)
 
-    if eval_datasets is not None:
-        trainer.validate(model, dataloaders=eval_datasets)
-
-    if test_datasets is not None:
-        trainer.test(model, dataloaders=test_datasets)
+        if test_datasets is not None:
+            trainer.test(model, dataloaders=test_datasets)
