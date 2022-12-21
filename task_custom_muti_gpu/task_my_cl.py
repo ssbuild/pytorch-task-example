@@ -21,8 +21,8 @@ from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
-# model_base_dir = '/data/torch/bert-base-chinese'
-model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+model_base_dir = '/data/torch/bert-base-chinese'
+# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -259,6 +259,7 @@ class MyCheckpointCallback(CheckpointCallback):
 
         if not hasattr(self.best, 'f1'):
             self.best['f1'] = f1
+
         print('current', f1, 'best', self.best['f1'])
         if f1 >= self.best['f1']:
             self.best['f1'] = f1
@@ -270,7 +271,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MyCheckpointCallback(every_n_train_steps=100)
+    checkpoint_callback = MyCheckpointCallback(every_n_train_steps=10000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
