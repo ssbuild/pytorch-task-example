@@ -9,9 +9,11 @@ from deep_training.data_helper import ModelArguments, DataArguments, TrainingArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.transformer import TransformerModelForUnilm, TransformerMeta
 from deep_training.utils.func import seq_padding
+from deep_training.utils.trainer import AutoCheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader, IterableDataset
+from tqdm import tqdm
 from transformers import BertTokenizer
 from transformers import HfArgumentParser
 
@@ -133,7 +135,12 @@ class MyTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
     #             f.write(obj)
     #     f.close()
 
-def get_trainer():
+
+
+if __name__== '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
+    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+
     checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_train_steps=1000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
@@ -146,14 +153,9 @@ def get_trainer():
         gradient_clip_val=training_args.max_grad_norm,
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
+        strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
-    return trainer
 
-if __name__== '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
 
@@ -181,7 +183,7 @@ if __name__== '__main__':
                 dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True)
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True,with_record_iterable_dataset=True)
     eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
     test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
     if train_datasets is not None:

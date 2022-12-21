@@ -199,7 +199,7 @@ if __name__== '__main__':
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True)
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True,with_record_iterable_dataset=True)
     eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
     test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
     if train_datasets is not None:
@@ -213,7 +213,7 @@ if __name__== '__main__':
     model = MyTransformer(dataHelper.eval_labels,with_efficient=True,prompt_args=prompt_args,config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:
-        trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
+        trainer.fit(model, train_dataloaders=train_datasets)
 
     if eval_datasets is not None:
         trainer.validate(model, dataloaders=eval_datasets)

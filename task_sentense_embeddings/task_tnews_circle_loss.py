@@ -138,7 +138,7 @@ def compute_corrcoef(x, y):
     """
     return scipy.stats.spearmanr(x, y).correlation
 
-def choise_samples(vec_maps : dict):
+def choise_samples_from_classvectors(vec_maps : dict):
     a_vecs, b_vecs, labels = [], [], []
     for k in vec_maps:
         print(k, len(vec_maps[k]))
@@ -234,7 +234,7 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
                 if label not in vec_maps:
                     vec_maps[label] = []
                 vec_maps[label].append(logit)
-        eval_samples = choise_samples(vec_maps)
+        eval_samples = choise_samples_from_classvectors(vec_maps)
 
         a_vecs, b_vecs, labels = eval_samples
         a_vecs = transform_and_normalize(a_vecs)
@@ -293,7 +293,7 @@ if __name__== '__main__':
                 dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True)
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True,with_record_iterable_dataset=True)
     eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
     test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
     if train_datasets is not None:
@@ -308,7 +308,7 @@ if __name__== '__main__':
     model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:
-        trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
+        trainer.fit(model, train_dataloaders=train_datasets)
 
     if eval_datasets is not None:
         trainer.validate(model, dataloaders=eval_datasets)

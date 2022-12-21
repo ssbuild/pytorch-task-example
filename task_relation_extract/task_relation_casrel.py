@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import os
 import sys
+
+from deep_training.utils.trainer import AutoCheckpointCallback
 from tqdm import tqdm
 from torch.utils.data import DataLoader, IterableDataset
 from deep_training.nlp.metrics.pointer import metric_for_spo
@@ -246,8 +249,58 @@ class MyTransformer(TransformerForHphtlinker, metaclass=TransformerMeta):
         print(str_report)
         self.log('val_f1', f1, prog_bar=True)
 
-def get_trainer():
-    checkpoint_callback = ModelCheckpoint(monitor="val_f1", every_n_epochs=1)
+
+
+class MyAutoCheckpointCallback(AutoCheckpointCallback):
+    def __init__(self,*args,**kwargs):
+        super(MyAutoCheckpointCallback, self).__init__(*args,**kwargs)
+        self.weight_file = './best.pt'
+
+    def on_save_model(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        pl_module: MyTransformer
+
+        #当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+        eval_datasets = dataHelper.load_dataset(data_args.eval_file)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+        eval_labels = pl_module.eval_labels
+        y_preds, y_trues = [], []
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+            for k in batch:
+                batch[k] = batch[k].to(device)
+            o = pl_module.validation_step(batch,i)
+
+            logits1, logits2, _, _ = o['outputs']
+            bs = len(logits1)
+            output_labels = eval_labels[i * bs:(i + 1) * bs]
+            p_spoes = extract_spoes([logits1, logits2])
+            t_spoes = output_labels
+            y_preds.extend(p_spoes)
+            y_trues.extend(t_spoes)
+
+        print(y_preds[:3])
+        print(y_trues[:3])
+        f1, str_report = metric_for_spo(y_trues, y_preds, self.config.label2id)
+        print(f1)
+        print(str_report)
+
+
+        if not hasattr(self.best, 'f1'):
+            self.best['f1'] = f1
+        print('current', f1, 'best', self.best['f1'])
+        if f1 >= self.best['f1']:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}...'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
+
+if __name__== '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
+    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+
+    checkpoint_callback = ModelCheckpoint(every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
@@ -259,14 +312,9 @@ def get_trainer():
         gradient_clip_val=training_args.max_grad_norm,
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
+        strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
-    return trainer
 
-if __name__== '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    trainer = get_trainer()
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
     save_fn_args = (tokenizer, data_args.max_seq_length,label2id)
@@ -295,23 +343,29 @@ if __name__== '__main__':
                                        intermediate_name=intermediate_name, shuffle=False, mode='test'))
 
 
-    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True)
-    eval_datasets = dataHelper.load_dataset(eval_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
-    test_datasets = dataHelper.load_dataset(test_files,num_processes=trainer.world_size,process_index=trainer.global_rank)
+    train_datasets = dataHelper.load_dataset(train_files,shuffle=True,num_processes=trainer.world_size,process_index=trainer.global_rank,infinite=True,with_record_iterable_dataset=True)
+   
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets,batch_size=training_args.train_batch_size,collate_fn=dataHelper.collate_fn,shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-    if eval_datasets is not None:
-        eval_datasets = DataLoader(eval_datasets,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-    if test_datasets is not None:
-        test_datasets = DataLoader(test_datasets,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
+   
 
     model = MyTransformer(dataHelper.eval_labels,config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:
-        trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
+        trainer.fit(model, train_dataloaders=train_datasets)
+    else:
+        eval_datasets = dataHelper.load_dataset(eval_files)
+        test_datasets = dataHelper.load_dataset(test_files)
 
-    if eval_datasets is not None:
-        trainer.validate(model, dataloaders=eval_datasets)
-
-    if test_datasets is not None:
-        trainer.test(model, dataloaders=test_datasets)
+        if eval_datasets is not None:
+            eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                       collate_fn=dataHelper.collate_fn)
+        if test_datasets is not None:
+            test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
+                                       collate_fn=dataHelper.collate_fn)
+            
+        if eval_datasets is not None:
+            trainer.validate(model, dataloaders=eval_datasets)
+    
+        if test_datasets is not None:
+            trainer.test(model, dataloaders=test_datasets)

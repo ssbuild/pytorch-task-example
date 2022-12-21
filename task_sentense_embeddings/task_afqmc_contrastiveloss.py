@@ -223,7 +223,7 @@ if __name__== '__main__':
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
-        trainer.fit(model, train_dataloaders=train_datasets,val_dataloaders=eval_datasets)
+        trainer.fit(model, train_dataloaders=train_datasets)
 
     if eval_datasets is not None:
         trainer.validate(model, dataloaders=eval_datasets)

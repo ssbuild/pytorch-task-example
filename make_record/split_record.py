@@ -13,13 +13,16 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
     print('split_records record...')
     options = RECORD.TFRecordOptions(compression_type=compression_type)
     dataset_reader = Loader.RandomDataset(input_record_filenames, options=options, with_share_memory=True)
-    data_size = len(dataset_reader)
+
     all_example = []
-    for i in tqdm(range(data_size), desc='load records'):
+    for i in tqdm(range(len(dataset_reader)), desc='load records'):
         serialized = dataset_reader[i]
         all_example.append(serialized)
     dataset_reader.close()
 
+    # #小样本
+    # all_example = all_example[:10000]
+    data_size = len(all_example)
     shuffle_idx = list(range(data_size))
     writer_train = WriterObject(output_train_file)
     writer_eval = WriterObject(output_eval_file)
@@ -50,18 +53,18 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
 
 
 if __name__ == '__main__':
-    src_dir = '/tmp/raw_record'
-    dst_dir = '/tmp/raw_record_shuffle'
+    src_files = [
+        '/data/record/cse/dataset_0-train.record'
+    ]
+    dst_dir = '/data/record/cse/'
 
     if not os.path.exists(dst_dir):
         gfile.makedirs(dst_dir)
 
-    example_files = gfile.glob(os.path.join(src_dir, '*record'))
 
     output_train_file = os.path.join(dst_dir,'train.record')
-
     output_eval_file = os.path.join(dst_dir,'eval.record')
 
-    split_records(input_record_filenames=example_files,
+    split_records(input_record_filenames=src_files,
                   output_train_file=output_train_file,
                   output_eval_file=output_eval_file)
