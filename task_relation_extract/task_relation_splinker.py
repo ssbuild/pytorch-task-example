@@ -58,7 +58,7 @@ class NN_DataHelper(DataHelper):
         self.index += 1
 
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, predicate2id, mode = user_data
+        tokenizer, max_seq_length, do_lower_case,predicate2id, mode = user_data
         sentence, entities, re_list = data
         spo_list = re_list
 
@@ -304,20 +304,23 @@ if __name__ == '__main__':
     # 缓存数据集
     intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
-        dataHelper.train_files = dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                                                   data_args,
-                                                                   intermediate_name=intermediate_name, shuffle=True,
-                                                                   mode='train')
+        dataHelper.train_files.append(
+            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
+                                              data_args,
+                                              intermediate_name=intermediate_name, shuffle=True,
+                                              mode='train'))
     if data_args.do_eval:
-        dataHelper.eval_files = dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                  data_args,
-                                                                  intermediate_name=intermediate_name, shuffle=False,
-                                                                  mode='eval')
+        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
+                                                                       data_args,
+                                                                       intermediate_name=intermediate_name,
+                                                                       shuffle=False,
+                                                                       mode='eval'))
     if data_args.do_test:
-        dataHelper.test_files = dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                  data_args,
-                                                                  intermediate_name=intermediate_name, shuffle=False,
-                                                                  mode='test')
+        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
+                                                                       data_args,
+                                                                       intermediate_name=intermediate_name,
+                                                                       shuffle=False,
+                                                                       mode='test'))
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,

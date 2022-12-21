@@ -13,7 +13,7 @@ from transformers import HfArgumentParser, BertTokenizer
 from fastdatasets import gfile
 
 train_info_args = {
-    'devices': '1',
+    'devices':  1,
     'data_backend': 'lmdb',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',

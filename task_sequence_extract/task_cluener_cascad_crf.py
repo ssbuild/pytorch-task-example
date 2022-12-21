@@ -259,7 +259,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MyCheckpointCallback(monitor='val_f1', save_top_k=1, every_n_epochs=1)
+    checkpoint_callback = MyCheckpointCallback(monitor='val_f1',  every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=10,
         callbacks=[checkpoint_callback],
@@ -284,32 +284,31 @@ if __name__ == '__main__':
         'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
     }
 
-    # 缓存数据集
+      # 缓存数据集
     intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
-        dataHelper.train_files = dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
+        dataHelper.train_files.append(dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
                                                                    data_args,
                                                                    intermediate_name=intermediate_name, shuffle=True,
-                                                                   mode='train')
+                                                                   mode='train')) 
     if data_args.do_eval:
-        dataHelper.eval_files = dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
+        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
                                                                   data_args,
                                                                   intermediate_name=intermediate_name, shuffle=False,
-                                                                  mode='eval')
+                                                                  mode='eval')) 
     if data_args.do_test:
-        dataHelper.test_files = dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
+        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
                                                                   data_args,
                                                                   intermediate_name=intermediate_name, shuffle=False,
-                                                                  mode='test')
+                                                                  mode='test'))
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True)
-
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+                                        collate_fn=dataHelper.collate_fn,
+                                        shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     model = MyTransformer(dataHelper.eval_labels,config=config,model_args=model_args,training_args=training_args)
 
