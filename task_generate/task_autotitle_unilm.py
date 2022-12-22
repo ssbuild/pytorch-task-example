@@ -95,43 +95,7 @@ class MyTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
 
-    # def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-    #     self.index += 1
-    #     # if self.index < 2:
-    #     #     self.log('val_f1', 0.0, prog_bar=True)
-    #     #     return
-    #
-    #     y_preds, y_trues = [], []
-    #     for i, o in tqdm(enumerate(outputs), total=len(outputs)):
-    #         logits, _ = o['outputs']
-    #         bs = len(logits)
-    #         output_labels = eval_labels[i * bs:(i + 1) * bs]
-    #         p_spoes = extract_spoes(logits, self.config.id2label, self.rel2id, threshold)
-    #         t_spoes = output_labels
-    #         y_preds.extend(p_spoes)
-    #         y_trues.extend(t_spoes)
-    #
-    #     print(y_preds[:3])
-    #     print(y_trues[:3])
-    #     f1, str_report = metric_for_spo(y_trues, y_preds, self.rel2id)
-    #     print(f1)
-    #     print(str_report)
-    #     self.log('val_f1', f1, prog_bar=True)
-    #
-    # def test_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-    #     print('write to file')
-    #     from fastdatasets.record import NumpyWriter
-    #     f = NumpyWriter('./eval_vecs.record')
-    #
-    #     for i, o in tqdm(enumerate(outputs), total=len(outputs)):
-    #         _, b_logits, b_labels = o['outputs']
-    #         for j in range(len(b_logits)):
-    #             obj = {
-    #                 'logit': np.asarray(b_logits[j], dtype=np.float32),
-    #                 'label': np.asarray(b_labels[j], dtype=np.int32),
-    #             }
-    #             f.write(obj)
-    #     f.close()
+
 
 
 
