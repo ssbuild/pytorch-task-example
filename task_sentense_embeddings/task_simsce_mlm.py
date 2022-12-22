@@ -8,7 +8,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.contrast import compute_simcse_loss
-from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -120,7 +120,7 @@ class NN_DataHelper(DataHelper):
         o['weight'] = o['weight'][:, :max_len]
         return o
 
-class MyTransformer(TransformerModel, metaclass=TransformerMeta):
+class MyTransformer(TransformerModel, with_pl=True):
     def __init__(self,*args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
         config = self.config

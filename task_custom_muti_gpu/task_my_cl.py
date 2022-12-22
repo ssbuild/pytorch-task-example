@@ -11,7 +11,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.circle_loss import CircleLoss
-from deep_training.nlp.models.transformer import TransformerModel, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
@@ -168,7 +168,7 @@ def choise_samples_from_classvectors(vec_maps: dict):
     labels = np.stack(labels, axis=0)
     return a_vecs, b_vecs, labels
 
-class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, metaclass=TransformerMeta):
+class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
     def __init__(self,*args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)

@@ -7,7 +7,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.models.transformer import TransformerForMaskLM, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerForMaskLM
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -117,7 +117,7 @@ class NN_DataHelper(DataHelper):
         o['weight'] = o['weight'][:, :max_len]
         return o
 
-class MyTransformer(TransformerForMaskLM,metaclass=TransformerMeta):
+class MyTransformer(TransformerForMaskLM,with_pl=True):
     def __init__(self,*args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
         self.loss_fct = CrossEntropyLoss(reduction='none',ignore_index=self.config.pad_token_id)

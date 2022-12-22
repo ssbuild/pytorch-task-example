@@ -7,7 +7,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.models.transformer import TransformerForSeq2SeqLM, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerForSeq2SeqLM
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.nn import CrossEntropyLoss
@@ -121,7 +121,7 @@ class NN_DataHelper(DataHelper):
         return o
 
 
-class MyTransformer(TransformerForSeq2SeqLM, metaclass=TransformerMeta):
+class MyTransformer(TransformerForSeq2SeqLM, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)

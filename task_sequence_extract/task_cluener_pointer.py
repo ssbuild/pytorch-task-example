@@ -10,7 +10,7 @@ from deep_training.data_helper import ModelArguments, DataArguments, TrainingArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.pointer import TransformerForPointer, extract_lse
-from deep_training.nlp.models.transformer import TransformerMeta
+
 from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
@@ -163,7 +163,7 @@ class NN_DataHelper(DataHelper):
 
 
 
-class MyTransformer(TransformerForPointer, metaclass=TransformerMeta):
+class MyTransformer(TransformerForPointer, with_pl=True):
     def __init__(self,eval_labels,*args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.model.eval_labels = eval_labels

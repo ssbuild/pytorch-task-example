@@ -11,7 +11,7 @@ from deep_training.data_helper import ModelArguments, DataArguments, TrainingArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.span_ner import TransformerForSpanNer, extract_lse_singlelabel, extract_lse_mutilabel
-from deep_training.nlp.models.transformer import TransformerMeta
+
 from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -173,7 +173,7 @@ class NN_DataHelper(DataHelper):
         o['labels'] = o['labels'][:,:max_len]
         return o
 
-class MyTransformer(TransformerForSpanNer, metaclass=TransformerMeta):
+class MyTransformer(TransformerForSpanNer, with_pl=True):
     def __init__(self,eval_labels, *args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
         self.with_mutilabel = self.model.with_mutilabel

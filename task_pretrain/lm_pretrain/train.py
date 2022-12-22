@@ -7,7 +7,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.models.transformer import TransformerForCausalLM, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerForCausalLM
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader, IterableDataset
@@ -106,7 +106,7 @@ class NN_DataHelper(DataHelper):
         return o
 
 
-class MyTransformer(TransformerForCausalLM, metaclass=TransformerMeta):
+class MyTransformer(TransformerForCausalLM, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
 

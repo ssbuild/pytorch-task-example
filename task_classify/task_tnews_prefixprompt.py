@@ -10,7 +10,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, PrefixM
     DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.prefixtuning import PrefixTransformerForSequenceClassification
-from deep_training.nlp.models.transformer import TransformerMeta
+
 from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
@@ -135,7 +135,7 @@ class NN_DataHelper(DataHelper):
         return o
 
 
-class MyTransformer(PrefixTransformerForSequenceClassification, metaclass=TransformerMeta):
+class MyTransformer(PrefixTransformerForSequenceClassification, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
@@ -289,6 +289,10 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True)
+    if train_datasets is not None:
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     model = MyTransformer(config=config, prompt_args=prompt_args, model_args=model_args, training_args=training_args)
 

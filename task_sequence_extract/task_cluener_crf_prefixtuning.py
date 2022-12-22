@@ -9,7 +9,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, PrefixModelArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.prefixtuning import PrefixTransformerForCRF
-from deep_training.nlp.models.transformer import TransformerMeta
+
 from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
@@ -155,7 +155,7 @@ class NN_DataHelper(DataHelper):
         o['labels'] = o['labels'][:,:max_len]
         return o
 
-class MyTransformer(PrefixTransformerForCRF, metaclass=TransformerMeta):
+class MyTransformer(PrefixTransformerForCRF, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
 

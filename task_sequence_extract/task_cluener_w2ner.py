@@ -9,7 +9,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_pointer
-from deep_training.nlp.models.transformer import TransformerMeta
+
 from deep_training.nlp.models.w2ner import TransformerForW2ner, extract_lse, W2nerArguments
 from deep_training.utils.trainer import CheckpointCallback
 from pytorch_lightning import Trainer
@@ -231,7 +231,7 @@ class NN_DataHelper(DataHelper):
         return o
 
 
-class MyTransformer(TransformerForW2ner, metaclass=TransformerMeta):
+class MyTransformer(TransformerForW2ner, with_pl=True):
     def __init__(self, eval_labels, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.model.eval_labels = eval_labels

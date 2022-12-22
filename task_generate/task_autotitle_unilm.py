@@ -7,7 +7,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.models.transformer import TransformerModelForUnilm, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.func import seq_padding
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -91,7 +91,7 @@ class NN_DataHelper(DataHelper):
         o['labels'] = o['labels'][:, :max_len]
         return o
 
-class MyTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
+class MyTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
 

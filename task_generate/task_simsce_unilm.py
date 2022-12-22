@@ -9,7 +9,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.layers.mask import unilm_mask
 from deep_training.nlp.losses.contrast import compute_simcse_loss
-from deep_training.nlp.models.transformer import TransformerModelForUnilm, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch import nn
@@ -104,7 +104,7 @@ class NN_DataHelper(DataHelper):
 
 
 
-class MyTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
+class MyTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self,*args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
         config = self.config

@@ -9,7 +9,7 @@ from deep_training.data_helper import ModelArguments, DataArguments, TrainingArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.layers.mask import unilm_mask
 from deep_training.nlp.losses.loss_kl import compute_kl_loss
-from deep_training.nlp.models.transformer import TransformerModelForUnilm, TransformerMeta
+from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.func import seq_padding
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -93,11 +93,11 @@ class NN_DataHelper(DataHelper):
         o['labels'] = o['labels'][:, :max_len]
         return o
 
-class TeacherTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
+class TeacherTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(TeacherTransformer, self).__init__(*args,**kwargs)
 
-class StudentTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
+class StudentTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(StudentTransformer, self).__init__(*args,**kwargs)
 
