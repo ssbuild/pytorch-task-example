@@ -93,6 +93,7 @@ class NN_DataHelper(DataHelper):
         o['labels'] = o['labels'][:, :max_len]
         return o
 
+#教师12层
 class TeacherTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(TeacherTransformer, self).__init__(*args,**kwargs)
@@ -118,6 +119,7 @@ class TeacherTransformer(TransformerModelForUnilm, with_pl=True):
             outputs = (lm_logits,)
         return outputs
 
+#学生6层
 class StudentTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(StudentTransformer, self).__init__(*args,**kwargs)
@@ -135,8 +137,10 @@ class StudentTransformer(TransformerModelForUnilm, with_pl=True):
             inputs.pop('token_type_ids')
 
 
-        outputs = self.model(*args,**inputs)
-        hidden_states = outputs[0]
+        outputs = self.model(*args,**inputs,output_hidden_states=True)
+        # hidden_states = outputs[0]
+        #第六层
+        hidden_states = outputs[2][-6]
         lm_logits = self.model.lm_head(hidden_states)
         if labels is not None:
             labels = labels.long()
