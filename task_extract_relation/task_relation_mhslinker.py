@@ -193,9 +193,7 @@ class NN_DataHelper(DataHelper):
         return D if mode == 'train' else D[:300]
 
     # batch for torch dataloader
-    # @staticmethod
-    # def collate_fn(batch):
-    #     return batch
+
 
     # batch dataset
     @staticmethod

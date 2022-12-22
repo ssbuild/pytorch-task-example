@@ -197,6 +197,11 @@ if __name__== '__main__':
                                              with_record_iterable_dataset=True)
     
 
+    if train_datasets is not None:
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+
     model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:

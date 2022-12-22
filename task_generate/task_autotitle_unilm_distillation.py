@@ -13,7 +13,7 @@ from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.func import seq_padding
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, IterableDataset
 from transformers import BertTokenizer
 from transformers import HfArgumentParser
 
@@ -35,7 +35,7 @@ train_info_args = {
     'weight_decay':0,
     'warmup_steps':0,
     'output_dir':'./output',
-    'max_seq_length':512,
+    'max_seq_length':200,
     'max_target_length':50
 }
 
@@ -97,32 +97,55 @@ class TeacherTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args,**kwargs):
         super(TeacherTransformer, self).__init__(*args,**kwargs)
 
-class StudentTransformer(TransformerModelForUnilm, with_pl=True):
-    def __init__(self, *args,**kwargs):
-        super(StudentTransformer, self).__init__(*args,**kwargs)
-
-        self.teacher_model = TeacherTransformer(*args,**kwargs)
-
-    def compute_loss(self, *args,**batch) -> tuple:
+    def compute_loss(self, *args, **batch) -> tuple:
         batch['attention_mask'] = unilm_mask(batch['token_type_ids'])
         if getattr(self.config, 'type_vocab_size', 0) != 2:
             batch.pop('token_type_ids')
 
-        labels = batch.pop('labels',None)
-        outputs = self.model(*args,**batch)
+        labels = batch.pop('labels', None)
+        outputs = self.model(*args, **batch)
         hidden_states = outputs[0]
-        lm_logits = self.lm_head(hidden_states)
+        lm_logits = self.model.lm_head(hidden_states)
 
         if labels is not None:
             labels = labels.long()
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
-            loss_student = self.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            loss = self.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+            outputs = (loss, lm_logits, labels)
+        else:
+            outputs = (lm_logits,)
+        return outputs
+
+class StudentTransformer(TransformerModelForUnilm, with_pl=True):
+    def __init__(self, *args,**kwargs):
+        super(StudentTransformer, self).__init__(*args,**kwargs)
+        self.teacher_model = TeacherTransformer(*args,**kwargs)
+        for k,p in self.teacher_model.named_parameters():
+            p.requires_grad=False
+
+
+    def compute_loss(self, *args,**batch) -> tuple:
+        labels = batch.pop('labels', None)
+
+        inputs = {k:v for k,v in batch.items()}
+        inputs['attention_mask'] = unilm_mask(inputs['token_type_ids'])
+        if getattr(self.config, 'type_vocab_size', 0) != 2:
+            inputs.pop('token_type_ids')
+
+
+        outputs = self.model(*args,**inputs)
+        hidden_states = outputs[0]
+        lm_logits = self.model.lm_head(hidden_states)
+        if labels is not None:
+            labels = labels.long()
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            loss_student = self.model.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
             teacher_logits = self.teacher_model.compute_loss(*args,**batch)[0]
-
             kl_Loss = compute_kl_loss(teacher_logits,lm_logits)
-
             loss_dict = {
                 'loss_student': loss_student,
                 'kl_Loss': kl_Loss,
@@ -228,7 +251,10 @@ if __name__== '__main__':
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True)
     
-
+    if train_datasets is not None:
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                    collate_fn=dataHelper.collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
     
     model = StudentTransformer(config=config,model_args=model_args,training_args=training_args)
 
