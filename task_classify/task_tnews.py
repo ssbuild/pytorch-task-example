@@ -131,8 +131,8 @@ class MyTransformer(TransformerForSequenceClassification, metaclass=TransformerM
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
 
-    def compute_loss(self, batch, batch_idx) -> tuple:
-        outputs = self(**batch)
+    def compute_loss(self, *args,**batch) -> tuple:
+        outputs = self.model(*args,**batch)
         labels = batch.get('labels', None)
         if labels is not None:
             loss, logits = outputs[0:2]
@@ -207,7 +207,7 @@ class MyCheckpointCallback(CheckpointCallback):
 
         print(f1, report)
 
-        if :
+        if 'f1' not in self.best:
             self.best['f1'] = f1
         print('current', f1, 'best', self.best['f1'])
         if f1 >= self.best['f1']:

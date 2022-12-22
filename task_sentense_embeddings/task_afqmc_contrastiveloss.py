@@ -134,17 +134,17 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self,batch,batch_idx):
+    def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels',None)
         if labels is not None:
             batch2 = {
                 "input_ids": batch.pop('input_ids_2'),
                 "attention_mask": batch.pop('attention_mask_2'),
             }
-        logits1 = self.feat_head(self(**batch)[0][:, 0, :])
+        logits1 = self.feat_head(self.model(*args,**batch)[0][:, 0, :])
         if labels is not None:
             labels = labels.float()
-            logits2 = self.feat_head(self(**batch2)[0][:, 0, :])
+            logits2 = self.feat_head(self.model(**batch2)[0][:, 0, :])
             loss = self.loss_fn([logits1, logits2], labels)
             outputs = (loss,logits1,logits2)
         else:
@@ -206,7 +206,7 @@ class MyCheckpointCallback(CheckpointCallback):
         corrcoef = compute_corrcoef(labels, sims)
         f1 = corrcoef
 
-        if :
+        if 'f1' not in self.best:
             self.best['f1'] = f1
         print('current', f1, 'best', self.best['f1'])
         if f1 >= self.best['f1']:

@@ -140,9 +140,9 @@ class MyTransformer(PrefixTransformerForSequenceClassification, metaclass=Transf
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
 
-    def compute_loss(self, batch, batch_idx) -> tuple:
+    def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels', None)
-        outputs = self(**batch)
+        outputs = self.model(*args,**batch)
         pooled_output = outputs[1]
         if self.model.training:
             pooled_output = self.model.dropout(pooled_output)

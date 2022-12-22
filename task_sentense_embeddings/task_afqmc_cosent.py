@@ -160,18 +160,18 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
             (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self,batch,batch_idx):
+    def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels',None)
         if labels is not None:
             batch2 = {
                 "input_ids": batch.pop('input_ids_2'),
                 "attention_mask": batch.pop('attention_mask_2'),
             }
-        logits1 = self.feat_head(self(**batch)[0][:, 0, :])
+        logits1 = self.feat_head(self.model(*args,**batch)[0][:, 0, :])
         if labels is not None:
             labels = labels.float()
             labels = torch.unsqueeze(labels,1)
-            logits2 = self.feat_head(self(**batch2)[0][:, 0, :])
+            logits2 = self.feat_head(self.model(**batch2)[0][:, 0, :])
             #重排序
             mid_logits_state = cat_even_odd_reorder(logits1,logits2)
             labels_state = cat_even_odd_reorder(labels, labels)

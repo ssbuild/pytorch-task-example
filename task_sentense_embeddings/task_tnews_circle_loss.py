@@ -198,9 +198,9 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
             (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self,batch,batch_idx) -> tuple:
+    def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels',None)
-        outputs = self(**batch)
+        outputs = self.model(*args,**batch)
         logits = self.feat_head(outputs[0][:, 0, :])
         # logits = torch.tan(logits)
         # logits = F.normalize(logits)

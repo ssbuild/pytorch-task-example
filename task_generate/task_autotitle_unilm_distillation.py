@@ -7,6 +7,8 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
+from deep_training.nlp.layers.mask import unilm_mask
+from deep_training.nlp.losses.loss_kl import compute_kl_loss
 from deep_training.nlp.models.transformer import TransformerModelForUnilm, TransformerMeta
 from deep_training.utils.func import seq_padding
 from pytorch_lightning import Trainer
@@ -91,9 +93,46 @@ class NN_DataHelper(DataHelper):
         o['labels'] = o['labels'][:, :max_len]
         return o
 
-class MyTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
+class TeacherTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
     def __init__(self, *args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
+        super(TeacherTransformer, self).__init__(*args,**kwargs)
+
+class StudentTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
+    def __init__(self, *args,**kwargs):
+        super(StudentTransformer, self).__init__(*args,**kwargs)
+
+        self.teacher_model = TeacherTransformer(*args,**kwargs)
+
+    def compute_loss(self, *args,**batch) -> tuple:
+        batch['attention_mask'] = unilm_mask(batch['token_type_ids'])
+        if getattr(self.config, 'type_vocab_size', 0) != 2:
+            batch.pop('token_type_ids')
+
+        labels = batch.pop('labels',None)
+        outputs = self.model(*args,**batch)
+        hidden_states = outputs[0]
+        lm_logits = self.lm_head(hidden_states)
+
+        if labels is not None:
+            labels = labels.long()
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            loss_student = self.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+            teacher_logits = self.teacher_model.compute_loss(*args,**batch)[0]
+
+            kl_Loss = compute_kl_loss(teacher_logits,lm_logits)
+
+            loss_dict = {
+                'loss_student': loss_student,
+                'kl_Loss': kl_Loss,
+                'loss': loss_student * 0.1 + kl_Loss
+            }
+
+            outputs = (loss_dict,lm_logits,labels)
+        else:
+            outputs = (lm_logits,)
+        return outputs
 
     # def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
     #     self.index += 1
@@ -191,7 +230,7 @@ if __name__== '__main__':
     
 
     
-    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
+    model = StudentTransformer(config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)

@@ -126,9 +126,9 @@ class MyTransformer(TransformerForSeq2SeqLM, metaclass=TransformerMeta):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
 
-    def compute_loss(self, batch, batch_idx) -> tuple:
+    def compute_loss(self, *args,**batch) -> tuple:
         labels = batch.pop('labels', None)
-        outputs = self(**batch)
+        outputs = self.model(*args,**batch)
         lm_logits = outputs[0]
         if labels is not None:
             loss = self.loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))

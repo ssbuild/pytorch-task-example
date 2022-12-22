@@ -128,12 +128,12 @@ class MyTransformer(TransformerForMaskLM,metaclass=TransformerMeta):
         loss = torch.sum(loss * weight, dtype=torch.float) / (torch.sum(weight, dtype=torch.float) + 1e-12)
         return loss.mean()
 
-    def compute_loss(self,batch,batch_idx) -> tuple:
+    def compute_loss(self, *args,**batch) -> tuple:
         labels,weight = None,None
         if 'labels' in batch:
             weight = batch.pop('weight')
             labels = batch.pop('labels')
-        outputs = self(**batch)
+        outputs = self.model(*args,**batch)
         logits = outputs[0]
         if labels is not  None:
             loss = self.compute_loss_mlm(labels,logits,weight)

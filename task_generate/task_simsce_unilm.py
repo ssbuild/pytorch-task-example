@@ -115,12 +115,12 @@ class MyTransformer(TransformerModelForUnilm, metaclass=TransformerMeta):
             (self.sim_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self,batch,batch_idx):
+    def compute_loss(self, *args,**batch) -> tuple:
         if self.training:
             batch = {k: torch.repeat_interleave(v, 2, dim=1) for k, v in batch.items()}
         labels = batch.pop('labels',None)
         batch['attention_mask'] = unilm_mask(batch['token_type_ids'])
-        outputs = self(**batch)
+        outputs = self.model(*args,**batch)
         lm_logits = self.model.lm_head(outputs[0])
         simcse_logits = self.sim_head(outputs[1])
 

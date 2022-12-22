@@ -127,10 +127,10 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
 
 
 
-    def compute_loss(self, batch, batch_idx):
+    def compute_loss(self, *args,**batch) -> tuple:
         if self.training:
             batch = {k: torch.repeat_interleave(v, 2, dim=1) for k, v in batch.items()}
-        outputs = self(**batch)
+        outputs = self.model(*args,**batch)
         simcse_logits = self.sim_head(outputs[1])
         if self.training:
             loss = compute_simcse_loss(simcse_logits)

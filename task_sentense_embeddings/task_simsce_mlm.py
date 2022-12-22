@@ -141,13 +141,13 @@ class MyTransformer(TransformerModel, metaclass=TransformerMeta):
         loss = torch.sum(loss, dtype=torch.float) / (torch.sum(weight, dtype=torch.float) + 1e-8)
         return loss
 
-    def compute_loss(self, batch,batch_idx):
+    def compute_loss(self, *args,**batch) -> tuple:
         labels,weight = None,None
         if 'labels' in batch:
             labels = batch.pop('labels')
             weight = batch.pop('weight')
 
-        outputs = self(**batch)
+        outputs = self.model(*args,**batch)
         mlm_logits = self.mlm_head(outputs[0])
         simcse_logits = self.sim_head(outputs[1])
         if labels is not None:
