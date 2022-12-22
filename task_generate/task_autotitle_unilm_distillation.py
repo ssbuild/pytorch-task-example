@@ -8,7 +8,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.layers.mask import unilm_mask
-from deep_training.nlp.losses.loss_kl import compute_kl_loss
+from deep_training.nlp.losses.loss_kl import KLDivLoss
 from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.func import seq_padding
 from pytorch_lightning import Trainer
@@ -124,7 +124,7 @@ class StudentTransformer(TransformerModelForUnilm, with_pl=True):
         self.teacher_model = TeacherTransformer(*args,**kwargs)
         for k,p in self.teacher_model.named_parameters():
             p.requires_grad=False
-
+        self.kl_loss = KLDivLoss('sum')
 
     def compute_loss(self, *args,**batch) -> tuple:
         labels = batch.pop('labels', None)
@@ -145,7 +145,7 @@ class StudentTransformer(TransformerModelForUnilm, with_pl=True):
             loss_student = self.model.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
             teacher_logits = self.teacher_model.compute_loss(*args,**batch)[0]
-            kl_Loss = compute_kl_loss(teacher_logits,lm_logits)
+            kl_Loss = self.kl_loss([teacher_logits,lm_logits])
             loss_dict = {
                 'loss_student': loss_student,
                 'kl_Loss': kl_Loss,
