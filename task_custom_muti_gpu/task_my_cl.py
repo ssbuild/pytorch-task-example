@@ -21,8 +21,8 @@ from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
-model_base_dir = '/data/torch/bert-base-chinese'
-# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+# model_base_dir = '/data/torch/bert-base-chinese'
+model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),

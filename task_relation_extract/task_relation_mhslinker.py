@@ -389,7 +389,7 @@ if __name__ == '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets)
+            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets)
+            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
