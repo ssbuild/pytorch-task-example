@@ -249,13 +249,14 @@ class MyTransformer(TransformerForMhsLinker, metaclass=TransformerMeta):
         # if self.index < 2:
         #     self.log('val_f1', 0.0, prog_bar=True)
         #     return
+        eval_labels = self.eval_labels
 
         threshold = 1e-8
         y_preds, y_trues = [], []
         for i,o in tqdm(enumerate(outputs),total=len(outputs)):
             logits1, logits2, _, _ = o['outputs']
             bs = len(logits1)
-            output_labels = self.eval_labels[i * bs:(i + 1) * bs]
+            output_labels = eval_labels[i * bs:(i + 1) * bs]
             p_spoes = extract_spoes([logits1, logits2],threshold)
             t_spoes = output_labels
             y_preds.extend(p_spoes)
@@ -308,7 +309,7 @@ class MyCheckpointCallback(CheckpointCallback):
         print(str_report)
 
 
-        if not hasattr(self.best, 'f1'):
+        if 'f1' not in self.best:
             self.best['f1'] = f1
         print('current', f1, 'best', self.best['f1'])
         if f1 >= self.best['f1']:

@@ -286,7 +286,7 @@ class MyCheckpointCallback(CheckpointCallback):
         corrcoef = compute_corrcoef(labels, sims)
         f1 = corrcoef
 
-        if not hasattr(self.best, 'f1'):
+        if 'f1' not in self.best:
             self.best['f1'] = f1
         print('current', f1, 'best', self.best['f1'])
         if f1 >= self.best['f1']:

@@ -257,7 +257,7 @@ class MyCheckpointCallback(CheckpointCallback):
         corrcoef = compute_corrcoef(labels, sims)
         f1 = corrcoef
 
-        if not hasattr(self.best, 'f1'):
+        if 'f1' not in self.best:
             self.best['f1'] = f1
 
         print('current', f1, 'best', self.best['f1'])
@@ -271,7 +271,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MyCheckpointCallback(every_n_train_steps=10000)
+    checkpoint_callback = MyCheckpointCallback(every_n_train_steps=1000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
@@ -340,13 +340,8 @@ if __name__ == '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
 
-        ckpt_path = './best.pt'
         if eval_datasets is not None:
-            trainer.validate(model,
-                             ckpt_path=ckpt_path,
-                             dataloaders=eval_datasets)
+            trainer.validate(model,dataloaders=eval_datasets,ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model,
-                         ckpt_path=ckpt_path,
-                         dataloaders=test_datasets)
+            trainer.test(model,dataloaders=test_datasets,ckpt_path='./best.pt')

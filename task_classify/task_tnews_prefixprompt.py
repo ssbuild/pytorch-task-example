@@ -220,7 +220,7 @@ class MyCheckpointCallback(CheckpointCallback):
 
         print(f1, report)
 
-        if not hasattr(self.best, 'f1'):
+        if 'f1' not in self.best:
             self.best['f1'] = f1
         print('current', f1, 'best', self.best['f1'])
         if f1 >= self.best['f1']:
