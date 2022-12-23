@@ -395,7 +395,7 @@ if __name__ == '__main__':
             model.to_onnx('./best.onnx',
                           input_sample=input_sample,
                           verbose=True,
-                          opset_version=10,
+                          opset_version=14,
                           do_constant_folding=True,
                           input_names=input_names,
                           output_names=out_names,
