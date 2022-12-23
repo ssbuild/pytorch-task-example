@@ -9,6 +9,7 @@ from deep_training.data_helper import ModelArguments, DataArguments, TrainingArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.func import seq_padding
+from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader, IterableDataset
@@ -103,7 +104,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_train_steps=1000)
+    checkpoint_callback = SimpleModelCheckpoint(monitor="loss", every_n_train_steps=1000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

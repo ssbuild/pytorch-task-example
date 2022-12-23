@@ -11,7 +11,7 @@ from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.pointer import TransformerForPointer, extract_lse
 
-from deep_training.utils.trainer import CheckpointCallback
+from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
@@ -169,9 +169,9 @@ class MyTransformer(TransformerForPointer, with_pl=True):
         self.model.eval_labels = eval_labels
         self.eval_labels = eval_labels
 
-class MyCheckpointCallback(CheckpointCallback):
+class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
-        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
+        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
@@ -219,7 +219,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MyCheckpointCallback(monitor='val_f1',  every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor='val_f1',  every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=10,
         callbacks=[checkpoint_callback],

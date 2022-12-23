@@ -16,6 +16,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import BertTokenizer
 from transformers import HfArgumentParser
+from deep_training.utils.trainer import SimpleModelCheckpoint
 
 train_info_args = {
     'devices':  1,
@@ -112,7 +113,7 @@ class TeacherTransformer(TransformerModelForUnilm, with_pl=True):
             labels = labels.long()
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
-            loss = self.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            loss = self.model.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
             outputs = (loss, lm_logits, labels)
         else:
@@ -121,11 +122,9 @@ class TeacherTransformer(TransformerModelForUnilm, with_pl=True):
 
 #学生6层
 class StudentTransformer(TransformerModelForUnilm, with_pl=True):
-    def __init__(self, *args,**kwargs):
+    def __init__(self,teacher_model, *args,**kwargs):
         super(StudentTransformer, self).__init__(*args,**kwargs)
-        self.teacher_model = TeacherTransformer(*args,**kwargs)
-        for k,p in self.teacher_model.named_parameters():
-            p.requires_grad=False
+        self.teacher_model = teacher_model
         self.kl_loss = KLDivLoss('sum')
 
     def compute_loss(self, *args,**batch) -> tuple:
@@ -170,7 +169,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_train_steps=1000)
+    checkpoint_callback = SimpleModelCheckpoint(monitor="loss", every_n_train_steps=1000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
@@ -224,8 +223,22 @@ if __name__== '__main__':
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-    
-    model = StudentTransformer(config=config,model_args=model_args,training_args=training_args)
+
+
+    #是否首先训练模型
+    is_training_teacher = True
+
+
+    if is_training_teacher:#训练teacher 模型
+        model = TeacherTransformer(config=config, model_args=model_args, training_args=training_args)
+    else: #蒸馏模型
+        teacher_weight = './best_teacher.pt'
+        #加载训练好的权重
+        teacher_model = TeacherTransformer.load_from_checkpoint(teacher_weight,config=config, model_args=model_args,
+                                                                training_args=training_args)
+        for k, p in teacher_model.named_parameters():
+            p.requires_grad = False
+        model = StudentTransformer(teacher_model,config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)

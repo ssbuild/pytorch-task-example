@@ -11,7 +11,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.circle_loss import CircleLoss
 from deep_training.nlp.models.transformer import TransformerModel
-from deep_training.utils.trainer import CheckpointCallback
+from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
@@ -248,9 +248,9 @@ class MyTransformer(TransformerModel, with_pl=True):
         self.log('corrcoef', corrcoef, prog_bar=True)
 
 
-class MyCheckpointCallback(CheckpointCallback):
+class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
-        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
+        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
@@ -298,7 +298,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MyCheckpointCallback(monitor="corrcoef", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="corrcoef", every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],

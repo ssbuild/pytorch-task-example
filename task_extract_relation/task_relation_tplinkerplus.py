@@ -12,7 +12,7 @@ from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_spo
 from deep_training.nlp.models.tplinkerplus import TransformerForTplinkerPlus, extract_spoes, TplinkerArguments
 
-from deep_training.utils.trainer import CheckpointCallback
+from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch.utils.data import DataLoader, IterableDataset
@@ -305,9 +305,9 @@ class MyTransformer(TransformerForTplinkerPlus, with_pl=True):
         self.log('val_f1', f1, prog_bar=True)
 
 
-class MyCheckpointCallback(CheckpointCallback):
+class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
-        super(MyCheckpointCallback, self).__init__(*args,**kwargs)
+        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
@@ -360,7 +360,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,TplinkerArguments))
     model_args, training_args, data_args , tplinker_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MyCheckpointCallback(monitor="val_f1", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="val_f1", every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
