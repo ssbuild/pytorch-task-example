@@ -1,7 +1,8 @@
 
 
 ##  安装
-  -  pip install -U deep_training
+  - pip install -U deep_training >= 0.0.3
+  - 当前文档版本pypi 0.0.3
 
 ## 更新详情
   - [deep_training](https://github.com/ssbuild/deep_training)
