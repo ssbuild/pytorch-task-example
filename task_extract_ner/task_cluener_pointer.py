@@ -8,6 +8,8 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
+from deep_training.nlp.layers.seq_pointer import f1_metric_for_pointer
+from deep_training.nlp.losses.loss_globalpointer import loss_for_pointer
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.pointer import TransformerForPointer, extract_lse
 
@@ -169,6 +171,22 @@ class MyTransformer(TransformerForPointer, with_pl=True):
         self.model.eval_labels = eval_labels
         self.eval_labels = eval_labels
 
+    def compute_loss(self,*args,**batch) -> tuple:
+        labels: torch.Tensor = batch.pop('labels', None)
+        outputs = self.model(*args,**batch)
+        logits = outputs[0]
+        if self.model.training:
+            logits = self.model.dropout(logits)
+        logits = self.model.pointer_layer(logits, batch['attention_mask'] if len(batch) else args[1])
+        if labels is not None:
+            loss = loss_for_pointer(labels, logits)
+            f1 = f1_metric_for_pointer(labels, logits)
+            loss_dict = {'loss': loss, 'f1': f1}
+            outputs = (loss_dict,logits,labels)
+        else:
+            outputs = (logits,)
+        return outputs
+
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
         super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
@@ -288,3 +306,30 @@ if __name__ == '__main__':
 
         if test_datasets is not None:
             trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+
+        is_convert_onnx = True
+        # 是否转换模型
+        if is_convert_onnx:
+            input_sample = (
+                torch.ones(size=(1, 128), dtype=torch.int64),
+                torch.ones(size=(1, 128), dtype=torch.int64),
+            )
+            model.eval()
+            model.to('cuda')
+            input_names = ["input_ids", "attention_mask"]
+            out_names = ["pred_ids"]
+
+            model = MyTransformer.load_from_checkpoint('./best.pt', with_efficient=True,config=config, model_args=model_args,
+                                                       training_args=training_args)
+            model.to_onnx('./best.onnx',
+                          input_sample=input_sample,
+                          verbose=True,
+                          opset_version=14,
+                          do_constant_folding=True,
+                          input_names=input_names,
+                          output_names=out_names,
+                          dynamic_axes={"input_ids": [0, 1],
+                                        "attention_mask": [0, 1],
+                                        "pred_ids": [0, 1]
+                                        }
+                          )

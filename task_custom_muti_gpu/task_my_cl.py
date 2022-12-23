@@ -33,8 +33,8 @@ train_info_args = {
     'config_name': os.path.join(model_base_dir, 'config.json'),
     # 语料已经制作好，不需要在转换
     'convert_file': False,
-    'do_train': False,
-    'do_eval': False,
+    'do_train': True,
+    'do_eval': True,
     'do_test': False,
     'train_file': '/data/record/cse/train.record',
     'eval_file': '/data/record/cse/eval.record',
@@ -276,7 +276,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(every_n_train_steps=1000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(every_n_train_steps=10000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

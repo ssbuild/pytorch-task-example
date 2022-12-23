@@ -377,3 +377,30 @@ if __name__ == '__main__':
 
         if test_datasets is not None:
             trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+
+        is_convert_onnx = True
+        # 是否转换模型
+        if is_convert_onnx:
+            input_sample = (
+                torch.ones(size=(1, 128), dtype=torch.int32),
+                torch.ones(size=(1, 128), dtype=torch.int32),
+            )
+            model.eval()
+            model.to('cuda')
+            input_names = ["input_ids", "attention_mask"]
+            out_names = ["pred_ids"]
+
+            model = MyTransformer.load_from_checkpoint('./best.pt', config=config, model_args=model_args,
+                                                       training_args=training_args)
+            model.to_onnx('./best.onnx',
+                          input_sample=input_sample,
+                          verbose=True,
+                          opset_version=10,
+                          do_constant_folding=True,
+                          input_names=input_names,
+                          output_names=out_names,
+                          dynamic_axes={"input_ids": [0, 1],
+                                        "attention_mask": [0, 1],
+                                        "pred_ids": [0, 1]
+                                        }
+                          )
