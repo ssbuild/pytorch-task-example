@@ -266,8 +266,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         print(y_preds[:3])
         print(y_trues[:3])
         e_f1, e_pr, e_rc, a_f1, a_pr, a_rc = evaluate_events(y_trues, y_preds, config.id2label)
-        print('[event level]',e_f1, e_pr, e_rc)
-        print('[argument level]',a_f1, a_pr, a_rc )
+        print('[event level]', '精确率 召回率 f1', e_pr, e_rc,e_f1)
+        print('[argument level]','精确率 召回率 f1', a_pr, a_rc,a_f1 )
 
         f1 = e_f1
 
