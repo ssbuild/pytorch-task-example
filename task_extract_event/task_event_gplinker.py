@@ -33,7 +33,7 @@ train_info_args = {
     'test_file': '/data/nlp/nlp_train_data/du_data/duee/duee_test.json',
     'label_file': '/data/nlp/nlp_train_data/du_data/duee/duee_event_schema.json',
     'learning_rate': 5e-5,
-    'max_epochs': 15,
+    'max_epochs': 100,# 最大批次
     'train_batch_size': 15,
     'eval_batch_size': 4,
     'test_batch_size': 2,
