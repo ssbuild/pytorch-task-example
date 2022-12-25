@@ -10,7 +10,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_spo
-from deep_training.nlp.models.gplinker import TransformerForGplinkerEvent, extract_events
+from deep_training.nlp.models.gplinker import TransformerForGplinkerEvent, extract_events,evaluate_events
 
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
@@ -28,13 +28,13 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': True,
-    'train_file': '/data/nlp/nlp_train_data/myrelation/duie/duee_train.json',
-    'eval_file': '/data/nlp/nlp_train_data/myrelation/duie/duee_dev.json',
-    'test_file': '/data/nlp/nlp_train_data/myrelation/duie/duee_test.json',
-    'label_file': '/data/nlp/nlp_train_data/myrelation/duie/duee_schema.json',
+    'train_file': '/data/nlp/nlp_train_data/du_data/duee/duee_train.json',
+    'eval_file': '/data/nlp/nlp_train_data/du_data/duee/duee_dev.json',
+    'test_file': '/data/nlp/nlp_train_data/du_data/duee/duee_test.json',
+    'label_file': '/data/nlp/nlp_train_data/du_data/duee/duee_event_schema.json',
     'learning_rate': 5e-5,
     'max_epochs': 15,
-    'train_batch_size': 20,
+    'train_batch_size': 15,
     'eval_batch_size': 4,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
@@ -43,7 +43,7 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 380,
+    'train_max_seq_length': 160,
     'eval_max_seq_length': 512,
     'test_max_seq_length': 512,
 }
@@ -62,7 +62,7 @@ class NN_DataHelper(DataHelper):
         self.index += 1
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-        sentence, entities, event_list = data
+        sentence, event_list = data
         tokens = list(sentence) if not do_lower_case else list(sentence.lower())
         if len(tokens) > max_seq_length - 2:
             tokens = tokens[0:(max_seq_length - 2)]
@@ -72,7 +72,7 @@ class NN_DataHelper(DataHelper):
         input_ids = np.asarray(input_ids, dtype=np.int32)
         attention_mask = np.asarray(attention_mask, dtype=np.int32)
 
-        max_target_len = 60
+        max_target_len = 512
         entity_labels = np.zeros(shape=(len(label2id), max_target_len, 2), dtype=np.int32)
         head_labels = np.zeros(shape=(1, max_target_len, 2), dtype=np.int32)
         tail_labels = np.zeros(shape=(1, max_target_len, 2), dtype=np.int32)
@@ -82,22 +82,36 @@ class NN_DataHelper(DataHelper):
         tail_labels_tmp = [set() for _ in range(1)]
 
         real_label = []
-        for s, p, o in event_list:
-            p: int = label2id[p]
-            real_label.append((s[0], s[1], p, o[0], o[1]))
-            s = (s[0] + 1, s[1] + 1)
-            o = (o[0] + 1, o[1] + 1)
-            if s[1] < max_seq_length - 1 and o[1] < max_seq_length - 1:
-                entity_labels_tmp[0].add((s[0], s[1]))
-                entity_labels_tmp[1].add((o[0], o[1]))
-                head_labels_tmp[p].add((s[0], o[0]))
-                tail_labels_tmp[p].add((s[1], o[1]))
+        for event in event_list:
+            true_event = []
+            for l,s,e in event:
+                l: int = label2id[l]
+                true_event.append((l,s,e))
+                s = s + 1
+                e = e + 1
+                if s < max_seq_length - 1 and e < max_seq_length - 1:
+                    entity_labels_tmp[l].add((s,e))
+
+            for i1, (_, h1, t1) in enumerate(event):
+                if h1 >= max_seq_length - 1 or t1 >= max_seq_length - 1:
+                    continue
+                for i2, (_, h2, t2) in enumerate(event):
+                    if i2 > i1:
+                        if h2 >= max_seq_length - 1 or t2 >= max_seq_length - 1:
+                            continue
+
+                        head_labels_tmp[0].add((min(h1, h2), max(h1, h2)))
+                        tail_labels_tmp[0].add((min(t1, t2), max(t1, t2)))
+            real_label.append(true_event)
 
         def feed_label(x, pts_list):
             tlens = [1]
             for p, pts in enumerate(pts_list):
                 tlens.append(len(pts))
                 for seq, pos in enumerate(pts):
+                    if seq >= max_target_len:
+                        print('*' * 30,seq)
+                        print(event_list)
                     x[p][seq][0] = pos[0]
                     x[p][seq][1] = pos[1]
             return np.max(tlens)
@@ -140,8 +154,9 @@ class NN_DataHelper(DataHelper):
                 jd = json.loads(line)
                 if not jd:
                     continue
-                larr = [jd['subject'], jd['predicate'], jd['object']]
-                labels.append('+'.join(larr))
+                roles = ['触发词'] + [o['role'] for o in jd['role_list'] ]
+                labels.extend([jd['event_type']  + '+' + role  for role in roles])
+        labels = list(set(labels))
         label2id = {label: i for i, label in enumerate(labels)}
         id2label = {i: label for i, label in enumerate(labels)}
         return label2id, id2label
@@ -157,36 +172,33 @@ class NN_DataHelper(DataHelper):
                     if not jd:
                         continue
 
-                    entities = jd.get('entities', None)
-                    re_list = jd.get('re_list', None)
+                    text: str = jd['text']
+                    events_label = []
+                    event_list = jd.get('event_list', None)
+                    try:
+                        if event_list is not None:
+                            for e in event_list:
+                                event = []
+                                etype = e['event_type']
+                                role = '触发词'
+                                argument = e['trigger']
+                                index = e['trigger_start_index']
+                                event.append((etype + '+' + role, index, index + len(argument) - 1))
+                                for a in e['arguments']:
+                                    role = a['role']
+                                    argument = a['argument']
+                                    index = a['argument_start_index']
+                                    event.append((etype + '+' + role,index,index + len(argument) - 1))
+                                events_label.append(event)
 
-                    if entities:
-                        entities_label = []
-                        for k, v in entities.items():
-                            pts = [_ for a_ in list(v.values()) for _ in a_]
-                            for pt in pts:
-                                entities_label.append((k, pt[0], pt[1]))
-                    else:
-                        entities_label = None
+                        else:
+                            events_label = None
+                        D.append((text, events_label))
+                    except Exception as e:
+                        print(e)
 
-                    if re_list is not None:
-                        re_list_label = []
-                        for re_node in re_list:
-                            for l, relation in re_node.items():
-                                s = relation[0]
-                                o = relation[1]
-                                re_list_label.append((
-                                    # (s['pos'][0], s['pos'][1],s['label']),
-                                    # l,
-                                    # (o['pos'][0], o['pos'][1],o['label'])
-                                    (s['pos'][0], s['pos'][1]),
-                                    '+'.join([s['label'], l, o['label']]),
-                                    (o['pos'][0], o['pos'][1])
-                                ))
-                    else:
-                        re_list_label = None
 
-                    D.append((jd['text'], entities_label, re_list_label))
+
         return D
 
     @staticmethod
@@ -222,29 +234,6 @@ class MyTransformer(TransformerForGplinkerEvent, with_pl=True):
         self.eval_labels = eval_labels
 
 
-    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        self.index += 1
-        if self.index < 2:
-            self.log('val_f1', 0.0, prog_bar=True)
-            return
-
-        threshold = 1e-7
-        y_preds, y_trues = [], []
-        for i,o in tqdm(enumerate(outputs),total=len(outputs)):
-            logits1, logits2, logits3, _,_,_ = o['outputs']
-            output_labels = self.eval_labels[i*len(logits1):(i + 1)*len(logits1)]
-            p_spoes = extract_events([logits1, logits2, logits3], threshold=threshold)
-            t_spoes =output_labels
-            y_preds.extend(p_spoes)
-            y_trues.extend(t_spoes)
-
-        print(y_preds[:3])
-        print(y_trues[:3])
-        f1, str_report = metric_for_spo(y_trues, y_preds, self.config.label2id)
-        print(f1)
-        print(str_report)
-        self.log('val_f1', f1, prog_bar=True)
-
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
         super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
@@ -272,17 +261,18 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
             logits1, logits2, logits3, _, _, _ = o['outputs']
             output_labels = eval_labels[i * len(logits1):(i + 1) * len(logits1)]
-            p_spoes = extract_spoes([logits1, logits2, logits3], threshold=threshold)
+            p_spoes = extract_events([logits1, logits2, logits3], threshold=threshold)
             t_spoes = output_labels
             y_preds.extend(p_spoes)
             y_trues.extend(t_spoes)
 
         print(y_preds[:3])
         print(y_trues[:3])
-        f1, str_report = metric_for_spo(y_trues, y_preds, config.label2id)
-        print(f1)
-        print(str_report)
+        e_f1, e_pr, e_rc, a_f1, a_pr, a_rc = evaluate_events(y_trues, y_preds, config.id2label)
+        print('[event level]',e_f1, e_pr, e_rc)
+        print('[argument level]',a_f1, a_pr, a_rc )
 
+        f1 = e_f1
 
 
         best_f1 = self.best.get('f1',-np.inf)

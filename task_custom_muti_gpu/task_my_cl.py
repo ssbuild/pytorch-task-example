@@ -263,7 +263,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         f1 = corrcoef
 
         best_f1 = self.best.get('f1',-np.inf)
-        print('current', f1, 'best', best_f1)
+        print('current', f1, 'history best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
             logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
