@@ -93,9 +93,15 @@ class NN_DataHelper(DataHelper):
                     entity_labels_tmp[l].add((s,e))
 
             for i1, (_, h1, t1) in enumerate(event):
+                h1 += 1
+                t1 += 1
+
                 if h1 >= max_seq_length - 1 or t1 >= max_seq_length - 1:
                     continue
                 for i2, (_, h2, t2) in enumerate(event):
+                    h2 += 1
+                    t2 += 1
+
                     if i2 > i1:
                         if h2 >= max_seq_length - 1 or t2 >= max_seq_length - 1:
                             continue
@@ -109,9 +115,6 @@ class NN_DataHelper(DataHelper):
             for p, pts in enumerate(pts_list):
                 tlens.append(len(pts))
                 for seq, pos in enumerate(pts):
-                    if seq >= max_target_len:
-                        print('*' * 30,seq)
-                        print(event_list)
                     x[p][seq][0] = pos[0]
                     x[p][seq][1] = pos[1]
             return np.max(tlens)
@@ -249,7 +252,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         eval_labels = pl_module.eval_labels
         config = pl_module.config
 
-        threshold = 1e-7
+        threshold = 0
         y_preds, y_trues = [], []
         for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
             for k in batch:
