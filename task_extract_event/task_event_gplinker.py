@@ -196,9 +196,6 @@ class NN_DataHelper(DataHelper):
                         D.append((text, events_label))
                     except Exception as e:
                         print(e)
-
-
-
         return D
 
     @staticmethod
