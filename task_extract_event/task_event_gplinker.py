@@ -162,6 +162,7 @@ class NN_DataHelper(DataHelper):
                 roles = ['触发词'] + [o['role'] for o in jd['role_list'] ]
                 labels.extend([jd['event_type']  + '+' + role  for role in roles])
         labels = list(set(labels))
+        labels = sorted(labels)
         label2id = {label: i for i, label in enumerate(labels)}
         id2label = {i: label for i, label in enumerate(labels)}
         return label2id, id2label
