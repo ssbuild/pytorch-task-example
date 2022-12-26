@@ -34,7 +34,7 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
     for i in tqdm(shuffle_idx, desc='shuffle record'):
         example = all_example[i]
 
-        if (i + 1) % 8 == 0:
+        if (i + 1) % 10 == 0:
             num_eval += 1
             count = num_eval
             writer = writer_eval
@@ -56,7 +56,7 @@ if __name__ == '__main__':
     src_files = [
         '/data/record/cse/dataset_0-train.record'
     ]
-    dst_dir = '/data/record/cse/'
+    dst_dir = '/data/record/cse_1226/'
 
     if not os.path.exists(dst_dir):
         gfile.makedirs(dst_dir)
