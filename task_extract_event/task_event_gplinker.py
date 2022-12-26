@@ -9,7 +9,6 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.metrics.pointer import metric_for_spo
 from deep_training.nlp.models.gplinker import TransformerForGplinkerEvent, extract_events,evaluate_events
 
 from deep_training.utils.trainer import SimpleModelCheckpoint
@@ -72,10 +71,11 @@ class NN_DataHelper(DataHelper):
         input_ids = np.asarray(input_ids, dtype=np.int32)
         attention_mask = np.asarray(attention_mask, dtype=np.int32)
 
-        max_target_len = 512
-        entity_labels = np.zeros(shape=(len(label2id), max_target_len, 2), dtype=np.int32)
-        head_labels = np.zeros(shape=(1, max_target_len, 2), dtype=np.int32)
-        tail_labels = np.zeros(shape=(1, max_target_len, 2), dtype=np.int32)
+        max_target_len1 = 64
+        max_target_len2 = 512
+        entity_labels = np.zeros(shape=(len(label2id), max_target_len1, 2), dtype=np.int32)
+        head_labels = np.zeros(shape=(1, max_target_len2, 2), dtype=np.int32)
+        tail_labels = np.zeros(shape=(1, max_target_len2, 2), dtype=np.int32)
 
         entity_labels_tmp = [set() for _ in range(len(label2id))]
         head_labels_tmp = [set() for _ in range(1)]
@@ -123,7 +123,8 @@ class NN_DataHelper(DataHelper):
         targetlen2 = feed_label(head_labels, list(map(lambda x: list(x), head_labels_tmp)))
         targetlen3 = feed_label(tail_labels, list(map(lambda x: list(x), tail_labels_tmp)))
 
-        targetlen = np.asarray(np.max([targetlen1, targetlen2, targetlen3]), dtype=np.int32)
+        targetlen1 = np.asarray(targetlen1, dtype=np.int32)
+        targetlen2 = np.asarray(np.max([targetlen2, targetlen3]), dtype=np.int32)
         pad_len = max_seq_length - len(input_ids)
         if pad_len > 0:
             pad_val = tokenizer.pad_token_id
@@ -136,7 +137,8 @@ class NN_DataHelper(DataHelper):
             'head_labels': head_labels,
             'tail_labels': tail_labels,
             'seqlen': seqlen,
-            'targetlen': targetlen,
+            'targetlen1': targetlen1,
+            'targetlen2': targetlen2,
         }
 
         if self.index < 5:
@@ -215,15 +217,16 @@ class NN_DataHelper(DataHelper):
             o[k] = torch.stack(o[k])
 
         max_len = torch.max(o.pop('seqlen'))
-        max_tarlen = torch.max(o.pop('targetlen'))
+        max_tarlen1 = torch.max(o.pop('targetlen1'))
+        max_tarlen2 = torch.max(o.pop('targetlen2'))
 
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-        o['entity_labels'] = o['entity_labels'][:, :, :max_tarlen]
-        o['head_labels'] = o['head_labels'][:, :, :max_tarlen]
-        o['tail_labels'] = o['tail_labels'][:, :, :max_tarlen]
+        o['entity_labels'] = o['entity_labels'][:, :, :max_tarlen1]
+        o['head_labels'] = o['head_labels'][:, :, :max_tarlen2]
+        o['tail_labels'] = o['tail_labels'][:, :, :max_tarlen2]
         return o
 
 
@@ -261,7 +264,11 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
             logits1, logits2, logits3, _, _, _ = o['outputs']
             output_labels = eval_labels[i * len(logits1):(i + 1) * len(logits1)]
-            p_spoes = extract_events([logits1, logits2, logits3], threshold=threshold)
+            p_spoes = extract_events([logits1, logits2, logits3],
+                                     label2id=config.label2id,
+                                     id2label=config.id2label,
+                                     threshold=threshold,
+                                     trigger=False)
             t_spoes = output_labels
             y_preds.extend(p_spoes)
             y_trues.extend(t_spoes)
@@ -273,7 +280,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         print('[argument level]','精确率 召回率 f1', a_pr, a_rc,a_f1 )
 
         f1 = e_f1
-
 
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
