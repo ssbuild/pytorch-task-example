@@ -11,6 +11,7 @@
   - task_classify 分类模型
   - task_extract_ner 序列抽取模型
   - tast_extract_relation 关系抽取模型
+  - tast_extract_event 事件抽取模型
   - task_generate 文本生成模型
   - task_pretrain 主流预训练模型
   - task_sentense_embeddings 句向量模型
