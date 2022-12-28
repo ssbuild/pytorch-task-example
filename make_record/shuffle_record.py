@@ -2,7 +2,6 @@
 # @Author  : tk
 # @FileName: shuffle_record.py
 
-
 import json
 import os
 from tqdm import tqdm
@@ -30,10 +29,6 @@ def shuffle_records(record_filenames,out_dir,out_record_num,compression_type='GZ
 
 
 if __name__ == '__main__':
-    src_dir='/tmp/raw_record'
-    dst_dir = '/tmp/raw_record_shuffle'
-    if not os.path.exists(dst_dir):
-        gfile.makedirs(dst_dir)
-
-    example_files = gfile.glob(os.path.join(src_dir, 'record*record'))
-    shuffle_records(record_filenames=example_files, out_dir=dst_dir, out_record_num=2)
+    src_records = ['/tmp/train.record']
+    dst_dir = '/tmp/'
+    shuffle_records(record_filenames=src_records, out_dir=dst_dir, out_record_num=1)
