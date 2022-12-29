@@ -4,17 +4,20 @@ import os.path
 import typing
 
 import numpy as np
+import pytorch_lightning
 import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.focal_loss import FocalLoss
-from deep_training.nlp.losses.loss_arcface import ArcMarginProduct
+from deep_training.nlp.losses.loss_cosface import AddMarginProduct
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
@@ -181,12 +184,11 @@ def choise_samples_from_classvectors(vec_maps: dict):
     labels = np.stack(labels, axis=0)
     return a_vecs, b_vecs, labels
 
-class MyTransformer(TransformerModel, with_pl=True):
-    def __init__(self,*args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
+class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
         self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
-        self.metric_product = ArcMarginProduct(512,self.config.num_labels,s=30.0, m=0.50, easy_margin=False)
-
+        self.metric_product = AddMarginProduct(512, self.config.num_labels, s=30.0, m=0.40)
         loss_type = 'cross_loss'
         if loss_type == 'focal_loss':
             self.loss_fn = FocalLoss(gamma=2)
@@ -200,9 +202,9 @@ class MyTransformer(TransformerModel, with_pl=True):
             (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self, *args,**batch) -> tuple:
-        labels: torch.Tensor = batch.pop('labels',None)
-        outputs = self.model(*args,**batch)
+    def compute_loss(self, *args, **batch) -> tuple:
+        labels: torch.Tensor = batch.pop('labels', None)
+        outputs = self.model(*args, **batch)
         logits = self.feat_head(outputs[0][:, 0, :])
         # logits = torch.tan(logits)
         # logits = F.normalize(logits)
@@ -214,6 +216,33 @@ class MyTransformer(TransformerModel, with_pl=True):
         else:
             outputs = (logits,)
         return outputs
+
+
+    def forward(self,*args, **batch):
+        return self.compute_loss(*args,**batch)
+
+    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
+        print('validation_epoch_end...')
+        vec_maps = {}
+        for i, o in tqdm(enumerate(outputs), total=len(outputs)):
+            b_logits, b_labels = o['outputs']
+            for j in range(len(b_logits)):
+                logit = np.asarray(b_logits[j], dtype=np.float32)
+                label = np.asarray(b_labels[j], dtype=np.int32)
+
+                label = label.squeeze().tolist()
+                if label not in vec_maps:
+                    vec_maps[label] = []
+                vec_maps[label].append(logit)
+        eval_samples = choise_samples_from_classvectors(vec_maps)
+
+        a_vecs, b_vecs, labels = eval_samples
+        a_vecs = transform_and_normalize(a_vecs)
+        b_vecs = transform_and_normalize(b_vecs)
+        sims = (a_vecs * b_vecs).sum(axis=1)
+        corrcoef = compute_corrcoef(labels, sims)
+        self.log('corrcoef', corrcoef, prog_bar=True, sync_dist=True)
+        print('corrcoef',corrcoef)
 
 
 

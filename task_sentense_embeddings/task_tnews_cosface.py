@@ -10,7 +10,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.focal_loss import FocalLoss
-from deep_training.nlp.losses.loss_arcface import ArcMarginProduct
+from deep_training.nlp.losses.loss_cosface import AddMarginProduct
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
@@ -189,13 +189,13 @@ class MyTransformer(TransformerModel, with_pl=True):
     def __init__(self,*args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
         self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
-        self.metric_product = ArcMarginProduct(512,self.config.num_labels,s=30.0, m=0.50, easy_margin=False)
-
+        self.metric_product = AddMarginProduct(512,self.config.num_labels,s=30.0, m=0.40)
         loss_type = 'cross_loss'
         if loss_type == 'focal_loss':
             self.loss_fn = FocalLoss(gamma=2)
         else:
             self.loss_fn = torch.nn.CrossEntropyLoss()
+
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
@@ -212,9 +212,9 @@ class MyTransformer(TransformerModel, with_pl=True):
         # logits = F.normalize(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)
-            metric_logits = self.metric_product(logits, labels)
-            loss = self.loss_fn(metric_logits, labels)
-            outputs = (loss.mean(), logits, labels)
+            metric_logits = self.metric_product(logits,labels)
+            loss = self.loss_fn(metric_logits,labels)
+            outputs = (loss.mean(),logits,labels)
         else:
             outputs = (logits,)
         return outputs
@@ -227,7 +227,6 @@ class MyTransformer(TransformerModel, with_pl=True):
             for j in range(len(b_logits)):
                 logit = np.asarray(b_logits[j], dtype=np.float32)
                 label = np.asarray(b_labels[j], dtype=np.int32)
-
                 label = label.squeeze().tolist()
                 if label not in vec_maps:
                     vec_maps[label] = []
