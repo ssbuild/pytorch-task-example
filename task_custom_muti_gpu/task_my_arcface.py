@@ -187,7 +187,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
         self.metric_product = ArcMarginProduct(512,self.config.num_labels,s=30.0, m=0.50, easy_margin=False)
 
-        loss_type = 'cross_loss'
+        loss_type = 'focal_loss'
         if loss_type == 'focal_loss':
             self.loss_fn = FocalLoss(gamma=2)
         else:
