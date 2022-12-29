@@ -21,8 +21,8 @@ from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
-# model_base_dir = '/data/torch/bert-base-chinese'
-model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+model_base_dir = '/data/torch/bert-base-chinese'
+# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -39,7 +39,7 @@ train_info_args = {
     'train_file': '/data/record/cse_1226/train.record',
     'eval_file': '/data/record/cse_1226/eval.record',
     # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
-    'label_file': '',
+    'label_file': '/data/record/cse_1226/labels_122.txt',
     'learning_rate': 3e-5,
     'max_steps': 120000,
     'max_epochs': 1,
@@ -86,7 +86,22 @@ class NN_DataHelper(DataHelper):
 
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
-        return None, None
+        file = files[0]
+        with open(file, mode='r', encoding='utf-8') as f:
+            lines = f.readlines()
+        labels = []
+        for line in lines:
+            line = line.replace('\r\n', '').replace('\n', '')
+            if not line:
+                continue
+            labels.append(line)
+        labels = list(set(labels))
+        labels = sorted(labels)
+        label2id = {l: i for i, l in enumerate(labels)}
+        id2label = {i: l for i, l in enumerate(labels)}
+        self.label2id = label2id
+        self.id2label = id2label
+        return self.label2id, self.id2label
 
     @staticmethod
     def collate_fn(batch):
