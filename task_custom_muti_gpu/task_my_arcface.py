@@ -45,7 +45,7 @@ train_info_args = {
     'eval_batch_size': 10,
     'test_batch_size': 10,
     'adam_epsilon': 1e-8,
-    'gradient_accumulation_steps': 20,
+    'gradient_accumulation_steps': 2,
     'max_grad_norm': 1.0,
     'weight_decay': 0,
     'warmup_steps': 0,
