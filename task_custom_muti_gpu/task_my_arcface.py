@@ -39,7 +39,7 @@ train_info_args = {
     # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
     'label_file': '/data/record/cse_1226/labels_122.txt',
     'learning_rate': 3e-5,
-    'max_steps': 120000,
+    'max_steps': 500000,
     'max_epochs': 1,
     'train_batch_size': 10,
     'eval_batch_size': 10,
