@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# 测试中...
 import copy
 import json
 import logging
@@ -34,7 +33,7 @@ train_info_args = {
     'learning_rate_for_task': 5e-5,
     'max_epochs': 15,
     'train_batch_size': 40,
-    'eval_batch_size': 1,
+    'eval_batch_size': 10,
     'test_batch_size': 1,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -155,11 +154,11 @@ class NN_DataHelper(DataHelper):
     def collate_fn(batch):
         o = {}
 
-        labels_fake = []
+        labels_fakes = []
         for i, b in enumerate(batch):
             b = copy.copy(b)
             labels = b.pop('labels',None)
-            labels_fake.append(labels)
+            labels_fakes.append(labels)
             if i == 0:
                 for k in b:
                     o[k] = [torch.tensor(b[k])]
@@ -169,11 +168,9 @@ class NN_DataHelper(DataHelper):
         for k in o:
             o[k] = torch.stack(o[k])
 
-        bs = o['input_ids'].size(0)
+
         seqlens = o.pop('seqlen')
         max_len = torch.max(seqlens)
-
-
         tokens_len = max_len
         max_span_length = NN_DataHelper.max_span_length if NN_DataHelper.max_span_length > 0 else tokens_len
         max_span_length = min(max_span_length,tokens_len)
@@ -181,16 +178,15 @@ class NN_DataHelper(DataHelper):
         labels = []
         spans = []
         spans_mask = []
-        has_label = labels_fake[0] is not None
+        has_label = labels_fakes[0] is not None
         #
-        for idx in range(bs):
+        for labels_fake,seqlen in zip(labels_fakes,seqlens):
             if has_label:
-                labels_map = {tuple(ldata[1:]): ldata[0] for ldata in labels_fake[idx]}
-            seqlen = seqlens[idx]
+                labels_map = {tuple(ldata[1:]): ldata[0] for ldata in labels_fake}
             label,span,span_mask = [],[],[]
             for i in range(tokens_len):
                 for j in range(i,min(i+max_span_length,tokens_len)):
-                    span.append((i,j,len(span)))
+                    span.append((i,j,j-i + 1))
                     span_mask.append(1 if i < seqlen and j < seqlen else 0)
                     if has_label:
                         label.append(labels_map.get((i,j),0))
@@ -238,7 +234,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
                                    collate_fn=dataHelper.collate_fn)
 
-        threshold = 1e-8
+
         eval_labels = pl_module.eval_labels
         config = pl_module.config
 
@@ -247,9 +243,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             for k in batch:
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch, i)
-
-            logits, _ = o['outputs']
-            y_preds.extend(extract_lse(logits, threshold))
+            logits,spans,spans_mask, _ = o['outputs']
+            y_preds.extend(extract_lse([logits,spans,spans_mask]))
             bs = len(logits)
             y_trues.extend(eval_labels[i * bs: (i + 1) * bs])
 
@@ -321,10 +316,15 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True)
+
+
+
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+
+
 
     model = MyTransformer(dataHelper.eval_labels,puremodel_args=puremodel_args, config=config, model_args=model_args, training_args=training_args)
 
