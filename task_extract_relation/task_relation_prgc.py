@@ -215,7 +215,6 @@ class NN_DataHelper(DataHelper):
                 for sh,st,p,oh,ot in spo:
                     rel_tag[p] = 1
                     corres_tag[sh, oh] = 1
-
                 spo_tmp = copy.deepcopy(spo)
                 if len(spo_tmp):
                     np.random.shuffle(spo_tmp)
