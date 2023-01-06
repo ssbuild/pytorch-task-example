@@ -282,8 +282,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             y_preds.extend(p_spoes)
             y_trues.extend(t_spoes)
 
-        print(y_preds[-3:])
-        print(y_trues[-3:])
+        print(y_preds[:3])
+        print(y_trues[:3])
         f1, str_report = metric_for_spo(y_trues, y_preds, config.label2id)
         print(f1)
         print(str_report)
