@@ -98,7 +98,7 @@ class NN_DataHelper(DataHelper):
         d = {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
-            'labels': labels,
+            'labels': np.asarray(labels,dtype=np.int32),
             'seqlen': seqlen,
         }
         if self.index < 5:
@@ -172,10 +172,10 @@ class NN_DataHelper(DataHelper):
     @staticmethod
     def collate_fn(batch):
         o = {}
-        fake_labes = []
+        fake_labels = []
         for i, b in enumerate(batch):
             b = copy.copy(b)
-            fake_labes.append(b.pop('labels',None))
+            fake_labels.append(b.pop('labels',None))
             if i == 0:
                 for k in b:
                     o[k] = [torch.tensor(b[k])]
@@ -188,11 +188,11 @@ class NN_DataHelper(DataHelper):
         bs = len(o['input_ids'])
         seqlens = o.pop('seqlen')
         max_len = torch.max(seqlens)
-        has_label = fake_labes[0] is not None
+        has_label = fake_labels[0] is not None
 
         labels = np.zeros(shape=(bs,len(NN_DataHelper.label2id),max_len,max_len),dtype=np.int32)
         if has_label:
-            for spo,label,seqlen in zip(fake_labes,labels,seqlens):
+            for spo,label,seqlen in zip(fake_labels,labels,seqlens):
                 for sh,st,p,oh,ot in spo:
                     label[p, sh, oh] = 1
                     label[p, sh, ot] = 2

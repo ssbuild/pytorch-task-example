@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 #参考实现: https://github.com/hy-struggle/PRGC
 #测试中.................................
+import copy
 import json
 import logging
 import typing
@@ -11,7 +12,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_spo
-from deep_training.nlp.models.gplinker import TransformerForGplinker, extract_spoes
+from deep_training.nlp.models.prgc_model import TransformerForPRGC,PrgcModelArguments, extract_spoes
 
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
@@ -40,7 +41,7 @@ train_info_args = {
     'label_file': '/data/nlp/nlp_train_data/myrelation/labels.json',
     'learning_rate': 5e-5,
     'max_epochs': 15,
-    'train_batch_size': 20,
+    'train_batch_size': 6,
     'eval_batch_size': 4,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
@@ -49,13 +50,13 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 380,
-    'eval_max_seq_length': 512,
-    'test_max_seq_length': 512,
+    'train_max_seq_length': 220,
+    'eval_max_seq_length': 380,
+    'test_max_seq_length': 380,
     ####    prgc_model_args
     'dropout':0.1,
     'corres_threshold': 0.5,
-    'rel_threshold': 0.1,
+    'rel_threshold': 0.5,
     'ensure_corres': True,
     'ensure_rel': True,
     'emb_fusion': 'concat',
@@ -86,41 +87,14 @@ class NN_DataHelper(DataHelper):
         input_ids = np.asarray(input_ids, dtype=np.int32)
         attention_mask = np.asarray(attention_mask, dtype=np.int32)
 
-        max_target_len = 60
-        entity_labels = np.zeros(shape=(2, max_target_len, 2), dtype=np.int32)
-        head_labels = np.zeros(shape=(len(predicate2id), max_target_len, 2), dtype=np.int32)
-        tail_labels = np.zeros(shape=(len(predicate2id), max_target_len, 2), dtype=np.int32)
-
-        entity_labels_tmp = [set() for _ in range(2)]
-        head_labels_tmp = [set() for _ in range(len(predicate2id))]
-        tail_labels_tmp = [set() for _ in range(len(predicate2id))]
-
-        real_label = []
+        labels, real_label = [], []
         for s, p, o in spo_list:
             p: int = predicate2id[p]
             real_label.append((s[0], s[1], p, o[0], o[1]))
             s = (s[0] + 1, s[1] + 1)
             o = (o[0] + 1, o[1] + 1)
             if s[1] < max_seq_length - 1 and o[1] < max_seq_length - 1:
-                entity_labels_tmp[0].add((s[0], s[1]))
-                entity_labels_tmp[1].add((o[0], o[1]))
-                head_labels_tmp[p].add((s[0], o[0]))
-                tail_labels_tmp[p].add((s[1], o[1]))
-
-        def feed_label(x, pts_list):
-            tlens = [1]
-            for p, pts in enumerate(pts_list):
-                tlens.append(len(pts))
-                for seq, pos in enumerate(pts):
-                    x[p][seq][0] = pos[0]
-                    x[p][seq][1] = pos[1]
-            return np.max(tlens)
-
-        targetlen1 = feed_label(entity_labels, list(map(lambda x: list(x), entity_labels_tmp)))
-        targetlen2 = feed_label(head_labels, list(map(lambda x: list(x), head_labels_tmp)))
-        targetlen3 = feed_label(tail_labels, list(map(lambda x: list(x), tail_labels_tmp)))
-
-        targetlen = np.asarray(np.max([targetlen1, targetlen2, targetlen3]), dtype=np.int32)
+                labels.append((s[0], s[1], p, o[0], o[1]))
         pad_len = max_seq_length - len(input_ids)
         if pad_len > 0:
             pad_val = tokenizer.pad_token_id
@@ -129,11 +103,8 @@ class NN_DataHelper(DataHelper):
         d = {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
-            'entity_labels': entity_labels,
-            'head_labels': head_labels,
-            'tail_labels': tail_labels,
+            'labels': np.asarray(labels,dtype=np.int32),
             'seqlen': seqlen,
-            'targetlen': targetlen,
         }
 
         if self.index < 5:
@@ -158,6 +129,9 @@ class NN_DataHelper(DataHelper):
                 labels.append('+'.join(larr))
         label2id = {label: i for i, label in enumerate(labels)}
         id2label = {i: label for i, label in enumerate(labels)}
+
+        NN_DataHelper.label2id = label2id
+        NN_DataHelper.id2label = id2label
         return label2id, id2label
 
     # 读取文件
@@ -201,12 +175,15 @@ class NN_DataHelper(DataHelper):
                         re_list_label = None
 
                     D.append((jd['text'], entities_label, re_list_label))
-        return D
+        return D if mode != 'eval' else D[:300]
 
     @staticmethod
     def collate_fn(batch):
         o = {}
+        fake_labels = []
         for i, b in enumerate(batch):
+            b = copy.copy(b)
+            fake_labels.append(b.pop('labels', None))
             if i == 0:
                 for k in b:
                     o[k] = [torch.tensor(b[k])]
@@ -216,48 +193,60 @@ class NN_DataHelper(DataHelper):
         for k in o:
             o[k] = torch.stack(o[k])
 
-        max_len = torch.max(o.pop('seqlen'))
-        max_tarlen = torch.max(o.pop('targetlen'))
-
+        bs = len(o['input_ids'])
+        seqlens = o.pop('seqlen')
+        max_len = torch.max(seqlens)
+        has_label = fake_labels[0] is not None
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-        o['entity_labels'] = o['entity_labels'][:, :, :max_tarlen]
-        o['head_labels'] = o['head_labels'][:, :, :max_tarlen]
-        o['tail_labels'] = o['tail_labels'][:, :, :max_tarlen]
+
+        if has_label:
+            rel_tags = np.zeros(shape=(bs, len(NN_DataHelper.label2id)), dtype=np.int32)
+            corres_tags = np.zeros(shape=(bs, max_len, max_len), dtype=np.int32)
+            potential_rels = np.zeros(shape=(bs, ), dtype=np.int32)
+            seq_tags = np.zeros(shape=(bs,2,max_len), dtype=np.int32)
+
+            state = np.random.get_state()
+            np.random.set_state(state)
+
+            for id,seqlen,spo,rel_tag,corres_tag,seq_tag in zip(range(bs),seqlens,fake_labels,rel_tags,corres_tags,seq_tags):
+                for sh,st,p,oh,ot in spo:
+                    rel_tag[p] = 1
+                    corres_tag[sh, oh] = 1
+
+                spo_tmp = copy.deepcopy(spo)
+                if len(spo_tmp):
+                    np.random.shuffle(spo_tmp)
+                    sh,st,p,oh,ot = spo_tmp[0]
+                    potential_rels[id] = p
+                    seq_tag[0][sh] = 1
+                    if st-sh > 0:
+                        seq_tag[0][sh+1:st+1] = 2
+                    seq_tag[1][oh] = 1
+                    if ot-oh > 0:
+                        seq_tag[1][oh+1:ot+1] = 2
+                seq_tag[:,seqlen:] = -100
+
+            rel_tags = torch.tensor(rel_tags,dtype=torch.int32)
+            corres_tags = torch.tensor(corres_tags, dtype=torch.int32)
+            potential_rels = torch.tensor(potential_rels, dtype=torch.int32)
+            seq_tags = torch.tensor(seq_tags, dtype=torch.int32)
+
+            o['rel_tags'] = rel_tags
+            o['corres_tags'] = corres_tags
+            o['potential_rels'] = potential_rels
+            o['seq_tags'] = seq_tags
         return o
 
 
-class MyTransformer(TransformerForGplinker, with_pl=True):
+class MyTransformer(TransformerForPRGC, with_pl=True):
     def __init__(self,eval_labels,*args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.index = 0
         self.eval_labels = eval_labels
 
-
-    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        self.index += 1
-        if self.index < 2:
-            self.log('val_f1', 0.0, prog_bar=True)
-            return
-
-        threshold = 1e-7
-        y_preds, y_trues = [], []
-        for i,o in tqdm(enumerate(outputs),total=len(outputs)):
-            logits1, logits2, logits3, _,_,_ = o['outputs']
-            output_labels = self.eval_labels[i*len(logits1):(i + 1)*len(logits1)]
-            p_spoes = extract_spoes([logits1, logits2, logits3], threshold=threshold)
-            t_spoes =output_labels
-            y_preds.extend(p_spoes)
-            y_trues.extend(t_spoes)
-
-        print(y_preds[:3])
-        print(y_trues[:3])
-        f1, str_report = metric_for_spo(y_trues, y_preds, self.config.label2id)
-        print(f1)
-        print(str_report)
-        self.log('val_f1', f1, prog_bar=True)
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
@@ -276,28 +265,28 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         eval_labels = pl_module.eval_labels
         config = pl_module.config
+        prgcmodel_args = pl_module.model.prgcmodel_args
 
-        threshold = 1e-7
         y_preds, y_trues = [], []
         for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch,i)
 
-            logits1, logits2, logits3, _, _, _ = o['outputs']
-            output_labels = eval_labels[i * len(logits1):(i + 1) * len(logits1)]
-            p_spoes = extract_spoes([logits1, logits2, logits3], threshold=threshold)
+            pred_rels, pred_seqs, pred_corres = o['outputs']
+            output_labels = eval_labels[i * len(pred_rels):(i + 1) * len(pred_rels)]
+            p_spoes = extract_spoes([pred_rels, pred_seqs, pred_corres],
+                                    rel_threshold = prgcmodel_args.rel_threshold,
+                                    corres_threshold=prgcmodel_args.corres_threshold)
             t_spoes = output_labels
             y_preds.extend(p_spoes)
             y_trues.extend(t_spoes)
 
-        print(y_preds[:3])
-        print(y_trues[:3])
+        print(y_preds[-3:])
+        print(y_trues[-3:])
         f1, str_report = metric_for_spo(y_trues, y_preds, config.label2id)
         print(f1)
         print(str_report)
-
-
 
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
@@ -308,8 +297,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
 
 if __name__ == '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,PrgcModelArguments))
+    model_args, training_args, data_args,prgcmodel_args = parser.parse_dict(train_info_args)
 
     checkpoint_callback = MySimpleModelCheckpoint(every_n_epochs=1)
     trainer = Trainer(
@@ -366,7 +355,7 @@ if __name__ == '__main__':
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
 
-    model = MyTransformer(dataHelper.eval_labels,with_efficient=False, config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(dataHelper.eval_labels,prgcmodel_args=prgcmodel_args, config=config, model_args=model_args, training_args=training_args)
 
 
     if train_datasets is not None:
