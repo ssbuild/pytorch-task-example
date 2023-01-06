@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 #参考实现: https://github.com/hy-struggle/PRGC
-#测试中.................................
 import copy
 import json
 import logging
