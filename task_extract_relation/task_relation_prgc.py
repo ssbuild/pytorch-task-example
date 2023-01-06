@@ -175,7 +175,7 @@ class NN_DataHelper(DataHelper):
                         re_list_label = None
 
                     D.append((jd['text'], entities_label, re_list_label))
-        return D if mode != 'eval' else D[:300]
+        return D
 
     @staticmethod
     def collate_fn(batch):
