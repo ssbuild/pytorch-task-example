@@ -386,7 +386,7 @@ if __name__ == '__main__':
             input_names = ["input_ids", "attention_mask"]
             out_names = ["pred_ids"]
 
-            model = MyTransformer.load_from_checkpoint('./best.pt', config=config, model_args=model_args,
+            model = MyTransformer.load_from_checkpoint('./best.pt', prgcmodel_args=prgcmodel_args, config=config, model_args=model_args,
                                                        training_args=training_args)
             model.to_onnx('./best.onnx',
                           input_sample=input_sample,
