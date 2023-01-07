@@ -4,6 +4,8 @@
 
 import json
 import os
+import random
+
 from tqdm import tqdm
 from fastdatasets.record import load_dataset as Loader,gfile,RECORD,DataType,WriterObject,FeatureWriter
 
@@ -20,6 +22,7 @@ def shuffle_records(record_filenames,out_dir,out_record_num,compression_type='GZ
     dataset_reader.close()
 
     shuffle_idx = list(range(data_size))
+    random.shuffle(shuffle_idx)
     writers = [WriterObject(os.path.join(out_dir, 'record_gzip_shuffle_{}.record'.format(i)), options=options) for i in range(out_record_num)]
     for i in tqdm(shuffle_idx,desc='shuffle record'):
         example = all_example[i]

@@ -6,6 +6,7 @@ import os
 
 import numpy as np
 from fastdatasets.record import load_dataset as Loader, gfile, RECORD, WriterObject
+from tfrecords import TFRecordOptions
 from tqdm import tqdm
 
 #拆分数据集
@@ -24,8 +25,8 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
     # all_example = all_example[:10000]
     data_size = len(all_example)
     shuffle_idx = list(range(data_size))
-    writer_train = WriterObject(output_train_file)
-    writer_eval = WriterObject(output_eval_file)
+    writer_train = WriterObject(output_train_file, options=TFRecordOptions(compression_type='GZIP'))
+    writer_eval = WriterObject(output_eval_file,options=TFRecordOptions(compression_type='GZIP'))
 
 
     num_train = 0

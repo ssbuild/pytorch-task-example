@@ -3,6 +3,7 @@
 # @FileName: split_record.py
 
 import os
+import random
 
 import numpy as np
 from fastdatasets.record import load_dataset as Loader, gfile, RECORD, NumpyWriter
@@ -25,6 +26,8 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
         dataset_reader.reset()
 
     shuffle_idx = list(range(data_size))
+    random.shuffle(shuffle_idx)
+
     writer_train = NumpyWriter(output_train_file)
     writer_eval = NumpyWriter(output_eval_file)
 

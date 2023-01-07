@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import copy
 import logging
 import os.path
 import typing
@@ -10,7 +11,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.circle_loss import CircleLoss
+from deep_training.nlp.losses.loss_infonce import InfoNCE
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
@@ -36,16 +37,16 @@ train_info_args = {
     'do_train': True,
     'do_eval': True,
     'do_test': False,
-    'train_file': '/data/record/cse_1226/train.record',
+    'train_file': '/data/record/cse_1226/train_pos_neg.record',
     'eval_file': '/data/record/cse_1226/eval.record',
     # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
     'label_file': '/data/record/cse_1226/labels_122.txt',
     'learning_rate': 3e-5,
     'max_steps': 120000,
     'max_epochs': 1,
-    'train_batch_size': 10,
+    'train_batch_size': 2,
     'eval_batch_size': 10,
-    'test_batch_size': 10,
+    'test_batch_size': 1,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 20,
     'max_grad_norm': 1.0,
@@ -118,11 +119,72 @@ class NN_DataHelper(DataHelper):
 
         o.pop('id', None)
         max_len = torch.max(o.pop('seqlen'))
-
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
+        return o
+
+    @staticmethod
+    def train_collate_fn(batch):
+        state = np.random.get_state()
+        np.random.set_state(state)
+
+
+        o = {}
+        neg_len_list = [4]
+        for i, b in enumerate(batch):
+            neg_len_list.append(b['neg_len'])
+
+        max_neg_len = np.min(neg_len_list)
+        for i, b in enumerate(batch):
+            b = copy.copy(b)
+            b_new = {}
+            b.pop('id',None)
+            pos_len = np.squeeze(b.pop('pos_len'))
+            neg_len = np.squeeze(b.pop('neg_len'))
+
+            pos = np.random.choice(list(range(pos_len)), replace=False, size=2)
+            neg = np.random.choice(list(range(neg_len)), replace=False, size=max_neg_len)
+
+            seqlens = []
+            b_new['input_ids'] = []
+            b_new['attention_mask'] = []
+            for kid in pos:
+                b_new['input_ids'].append(b['input_ids_pos{}'.format(kid)])
+                b_new['attention_mask'].append(b['attention_mask_pos{}'.format(kid)])
+                seqlens.append(b['seqlen_pos{}'.format(kid)])
+
+            b_new['input_ids'] = np.stack(b_new['input_ids'], axis=0)
+            b_new['attention_mask'] = np.stack(b_new['attention_mask'], axis=0)
+
+
+            b_new['input_ids2'] = []
+            b_new['attention_mask2'] = []
+            for kid in neg:
+                b_new['input_ids2'].append(b['input_ids_neg{}'.format(kid)])
+                b_new['attention_mask2'].append(b['attention_mask_neg{}'.format(kid)])
+                seqlens.append(b['seqlen_neg{}'.format(kid)])
+
+            b_new['input_ids2'] = np.stack(b_new['input_ids2'],axis=0)
+            b_new['attention_mask2'] = np.stack(b_new['attention_mask2'], axis=0)
+            b_new['seqlen'] = np.asarray(np.max(seqlens),dtype=np.int32)
+            if i == 0:
+                for k in b_new:
+                    o[k] = [torch.tensor(b_new[k])]
+            else:
+                for k in b_new:
+                    o[k].append(torch.tensor(b_new[k]))
+        for k in o:
+            o[k] = torch.stack(o[k])
+
+        max_len = torch.max(o.pop('seqlen'))
+        o['input_ids'] = o['input_ids'][:,:, :max_len]
+        o['attention_mask'] = o['attention_mask'][:,:, :max_len]
+
+        o['input_ids2'] = o['input_ids2'][:,:, :max_len]
+        o['attention_mask2'] = o['attention_mask2'][:,:, :max_len]
+        o['labels'] = torch.empty(0,dtype=torch.bool)
         return o
     
 def transform_and_normalize(vecs, kernel=None, bias=None):
@@ -186,55 +248,55 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
     def __init__(self,*args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
-        self.loss_fn = CircleLoss(m=0.25, gamma=64)
+        self.loss_fn = InfoNCE(negative_mode='paired',reduction='sum')
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self, *args,**batch) -> tuple:
-        
-        labels: torch.Tensor = batch.pop('labels', None)
-        outputs = self.model(*args,**batch)
+    def forward_hidden(self,*args,**batch):
+        outputs = self.model(*args, **batch)
         logits = self.feat_head(outputs[0][:, 0, :])
-        # logits = torch.tan(logits)
-        # logits = F.normalize(logits)
+        return logits
+
+    def compute_loss(self, *args,**batch) -> tuple:
+        labels: torch.Tensor = batch.pop('labels',None)
         if labels is not None:
-            labels = torch.squeeze(labels, dim=1)
-            loss = self.loss_fn(F.normalize(logits), labels)
-            outputs = (loss, logits, labels)
+            if self.model.training:
+                input_ids = batch['input_ids']
+                attention_mask = batch['attention_mask']
+                n = input_ids.size(1)
+                pos,neg = [],[]
+                for i in range(n):
+                    inputs = {}
+                    inputs['input_ids'] = input_ids[:,i]
+                    inputs['attention_mask'] = attention_mask[:, i]
+                    pos.append(self.forward_hidden(**inputs))
+                input_ids = batch['input_ids2']
+                attention_mask = batch['attention_mask2']
+                n = input_ids.size(1)
+                for i in range(n):
+                    inputs = {}
+                    inputs['input_ids'] = input_ids[:, i]
+                    inputs['attention_mask'] = attention_mask[:, i]
+                    neg.append(self.forward_hidden(**inputs))
+
+                neg_key = torch.stack(neg,dim=1)
+                query,pos_key = pos
+                loss = self.loss_fn(query,pos_key,neg_key)
+                outputs = (loss,)
+            else:
+                logits = self.forward_hidden(*args, **batch)
+                outputs = (None, logits,labels)
         else:
+            logits = self.forward_hidden(*args,**batch)
             outputs = (logits,)
         return outputs
 
 
     def forward(self,*args, **batch):
         return self.compute_loss(*args,**batch)
-
-    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        print('validation_epoch_end...')
-        vec_maps = {}
-        for i, o in tqdm(enumerate(outputs), total=len(outputs)):
-            b_logits, b_labels = o['outputs']
-            for j in range(len(b_logits)):
-                logit = np.asarray(b_logits[j], dtype=np.float32)
-                label = np.asarray(b_labels[j], dtype=np.int32)
-
-                label = label.squeeze().tolist()
-                if label not in vec_maps:
-                    vec_maps[label] = []
-                vec_maps[label].append(logit)
-        eval_samples = choise_samples_from_classvectors(vec_maps)
-
-        a_vecs, b_vecs, labels = eval_samples
-        a_vecs = transform_and_normalize(a_vecs)
-        b_vecs = transform_and_normalize(b_vecs)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels, sims)
-        self.log('corrcoef', corrcoef, prog_bar=True, sync_dist=True)
-        print('corrcoef',corrcoef)
-
 
 
 
@@ -339,7 +401,7 @@ if __name__ == '__main__':
                                              with_record_iterable_dataset=True)
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
+                                    collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
