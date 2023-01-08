@@ -15,46 +15,60 @@ def gen_pos_neg_records(all_example):
     all_keys = list(all_example.keys())
     all_example_num = {lable: list(range(len(all_example[lable]))) for lable in all_example}
 
-    for lable in tqdm(all_example.keys()):
-        all_keys.remove(lable)
-        examples = all_example[lable]
+    np.random.shuffle(all_keys)
+    while len(all_keys):
+        current_labels = np.random.choice(all_keys, replace=False, size=min(40,len(all_keys)))
+        pos_label, neg_labels = current_labels[0],current_labels[1:]
+
+        examples = all_example[pos_label]
         idx_list: list
         idx_list_negs: list
-        idx_list = all_example_num[lable]
+        idx_list = all_example_num[pos_label]
+
+        if len(idx_list) == 0:
+            continue
 
 
+        one_sample_pos, one_sample_neg = [], []
+        idx = np.random.choice(idx_list, replace=False,size=min(10, len(idx_list)))
+        for value in idx:
+            idx_list.remove(value)
+            one_sample_pos.append(examples[value])
 
-        while len(idx_list):
-            one_sample_pos, one_sample_neg = [], []
-            idx = np.random.choice(idx_list, replace=False,size=min(50, len(idx_list)))
-            for value in idx:
-                idx_list.remove(value)
-                one_sample_pos.append(examples[value])
+        #去除空标签数据
+        if len(idx_list) == 0:
+            all_keys.remove(pos_label)
 
-            if len(one_sample_pos) < 2:
+
+        if len(one_sample_pos) < 2:
+            continue
+
+
+        neg_labels = list(set(copy.deepcopy(neg_labels)))
+        for key in neg_labels:
+            examples_negs = all_example[key]
+            idx_list_negs = all_example_num[key]
+            if len(idx_list_negs) == 0:
+                # 去除空标签数据
+                all_keys.remove(key)
                 continue
+            ids = np.random.choice(idx_list_negs,replace=False, size=min(5,len(idx_list_negs)))
+            for value in ids:
+                if random.random() < 0.7:
+                    idx_list_negs.remove(value)
+                one_sample_neg.append(examples_negs[value])
 
-            keys = np.random.choice(all_keys,replace=False, size=min(40,len(all_keys)))
-            keys = list(set(keys))
+            if len(idx_list_negs) == 0:
+                # 去除空标签数据
+                all_keys.remove(key)
 
-            for key in keys:
-                examples_negs = all_example[key]
-                idx_list_negs = all_example_num[key]
-                if len(idx_list_negs) == 0:
-                    continue
-                ids = np.random.choice(idx_list_negs,replace=False, size=min(25,len(idx_list_negs)))
-                for value in ids:
-                    if random.random() < 0.5:
-                        idx_list_negs.remove(value)
-                    one_sample_neg.append(examples_negs[value])
+        if len(one_sample_neg) < 5:
+            continue
 
-            if len(one_sample_neg) < 30:
-                continue
+        all_example_new.append((one_sample_pos, one_sample_neg))
 
-            all_example_new.append((one_sample_pos, one_sample_neg))
-
-            if len(all_example_new) % 10000 == 0:
-                print('current num',len(all_example_new))
+        if len(all_example_new) % 10000 == 0:
+            print('current num',len(all_example_new))
 
 
     return all_example_new

@@ -102,28 +102,6 @@ class NN_DataHelper(DataHelper):
         random.shuffle(D)
         return D
 
-    # @staticmethod
-    # def collate_fn(batch):
-    #     o = {}
-    #     for i, b in enumerate(batch):
-    #         if i == 0:
-    #             for k in b:
-    #                 o[k] = [torch.tensor(b[k])]
-    #         else:
-    #             for k in b:
-    #                 o[k].append(torch.tensor(b[k]))
-    #     for k in o:
-    #         o[k] = torch.stack(o[k])
-    #
-    #     max_len = torch.max(o.pop('seqlen'))
-    #
-    #     o['input_ids'] = o['input_ids'][:, :max_len]
-    #     o['attention_mask'] = o['attention_mask'][:, :max_len]
-    #     if 'token_type_ids' in o:
-    #         o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-    #     return o
-
-
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
