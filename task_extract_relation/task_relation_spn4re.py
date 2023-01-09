@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#参考实现: #参考实现: https://github.com/DianboWork/SPN4RE
+#参考实现: https://github.com/DianboWork/SPN4RE
 
 import copy
 import json
@@ -40,30 +40,31 @@ train_info_args = {
     'eval_file': '/data/nlp/nlp_train_data/myrelation/re_labels.json',
     'label_file': '/data/nlp/nlp_train_data/myrelation/labels.json',
     'learning_rate': 5e-5,
+    'learning_rate_for_task': 5e-5,
     'max_epochs': 15,
-    'train_batch_size': 20,
+    'train_batch_size': 10,
     'eval_batch_size': 10,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
     'max_grad_norm': 1.0,
-    'weight_decay': 0,
+    'weight_decay': 0.01,
     'warmup_steps': 0,
     'output_dir': './output',
     'train_max_seq_length': 380,
     'eval_max_seq_length': 512,
     'test_max_seq_length': 512,
     ##### spn4re 模型参数
-    'num_generated_triples': 20,
+    'num_generated_triples': 15,
     'num_decoder_layers': 3,
     'matcher': 'avg', # one of ['avg', 'min']
     'na_rel_coef': 1.0,
     'rel_loss_weight': 1.0,
     'head_ent_loss_weight': 2.0,
     'tail_ent_loss_weight': 2.0,
-    'fix_bert_embeddings': True,
+    'fix_bert_embeddings': False,
     'max_span_length': 20,
-    'n_best_size': 100,
+    'n_best_size': 1,
 }
 
 
