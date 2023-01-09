@@ -228,7 +228,7 @@ class NN_DataHelper(DataHelper):
                     text = jd['text']
                     self.max_text_length = max(len(text),self.max_text_length)
                     D.append((text, entities_label, re_list_label))
-        return D if mode == 'train' else D[:300]
+        return D
 
 
 

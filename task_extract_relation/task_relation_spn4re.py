@@ -55,7 +55,7 @@ train_info_args = {
     'eval_max_seq_length': 512,
     'test_max_seq_length': 512,
     ##### spn4re 模型参数
-    'num_generated_triples': 15,
+    'num_generated_triples': 10,
     'num_decoder_layers': 3,
     'matcher': 'avg', # one of ['avg', 'min']
     'na_rel_coef': 1.0,
