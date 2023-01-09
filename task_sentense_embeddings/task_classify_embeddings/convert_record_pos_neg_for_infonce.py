@@ -30,7 +30,7 @@ def gen_pos_neg_records(all_example):
 
 
         one_sample_pos, one_sample_neg = [], []
-        idx = np.random.choice(idx_list, replace=False,size=min(10, len(idx_list)))
+        idx = np.random.choice(idx_list, replace=False,size=min(5, len(idx_list)))
         for value in idx:
             idx_list.remove(value)
             one_sample_pos.append(examples[value])
