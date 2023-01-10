@@ -4,23 +4,25 @@ import os.path
 import typing
 
 import numpy as np
+import pytorch_lightning
 import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.focal_loss import FocalLoss
-from deep_training.nlp.losses.loss_arcface import ArcMarginProduct
+from deep_training.nlp.losses.circle_loss import CircleLoss
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 model_base_dir = '/data/torch/bert-base-chinese'
-#model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -34,18 +36,18 @@ train_info_args = {
     'do_train': True,
     'do_eval': True,
     'do_test': False,
-    'train_file': '/data/record/cse_1226/train.record',
-    'eval_file': '/data/record/cse_1226/eval.record',
+    'train_file': '/data/record/cse_0110/train.record',
+    'eval_file': '/data/record/cse_0110/eval.record',
     # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
-    'label_file': '/data/record/cse_1226/labels_122.txt',
+    'label_file': '/data/record/cse_0110/labels_122.txt',
     'learning_rate': 3e-5,
-    'max_steps': 500000,
+    'max_steps': 120000,
     'max_epochs': 1,
     'train_batch_size': 10,
     'eval_batch_size': 10,
     'test_batch_size': 10,
     'adam_epsilon': 1e-8,
-    'gradient_accumulation_steps': 2,
+    'gradient_accumulation_steps': 20,
     'max_grad_norm': 1.0,
     'weight_decay': 0,
     'warmup_steps': 0,
@@ -121,7 +123,6 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-
         return o
     
 def transform_and_normalize(vecs, kernel=None, bias=None):
@@ -139,82 +140,102 @@ def compute_corrcoef(x, y):
     return scipy.stats.spearmanr(x, y).correlation
 
 def choise_samples_from_classvectors(vec_maps: dict):
-    a_vecs,b_vecs,labels = [],[],[]
+    num_pos,num_neg = 0, 0
+    a_vecs_pos,b_vecs_pos,a_vecs_negs,b_vecs_negs = [],[],[],[]
     for k in vec_maps:
         obj_list = vec_maps[k]
-        val = [obj_list[ids]
-               for ids in
-               np.random.choice(list(range(len(obj_list))), min(1000, len(obj_list)))
-               ]
-        if len(val) > 2:
+        if len(obj_list) > 2:
+            val = [obj_list[ids] for ids in np.random.choice(list(range(len(obj_list))),size= min(1000, len(obj_list)),replace=False)]
             for j in range(0, len(val) // 2, 2):
-                a_vecs.append(val[j])
-                b_vecs.append(val[j + 1])
-                labels.append(1)
+                num_pos += 1
+                a_vecs_pos.append(val[j])
+                b_vecs_pos.append(val[j + 1])
+    vec_all = []
+    for k,vec in vec_maps.items():
+        vec_all.append((k,vec))
 
-    for k1 in vec_maps.keys():
-        for k2 in vec_maps.keys():
-            if k1 == k2:
-                continue
+    shuffle_idx = np.arange(0,len(vec_all))
+    np.random.shuffle(shuffle_idx)
 
-            obj_list1 = vec_maps[k1]
-            val1 = [obj_list1[ids]
-                    for ids in
-                    np.random.choice(list(range(len(obj_list1))), min(10, len(obj_list1)))
-                    ]
 
-            obj_list2 = vec_maps[k2]
-            val2 = [obj_list2[ids]
-                    for ids in
-                    np.random.choice(list(range(len(obj_list2))), min(10, len(obj_list2)))
-                    ]
+    for i in range(0,shuffle_idx,2):
+        vec1 = vec_all[i]
+        vec2 = vec_all[i + 1]
+        if vec1[0] == vec2[0]:
+            continue
+        num_neg += 1
 
-            if val1 and val2:
-                for j in range(min(len(val1), len(val2))):
-                    a_vecs.append(val1[j])
-                    b_vecs.append(val2[j])
-                    labels.append(0)
+        if num_neg > num_pos * 2:
+            break
 
-    print('total sample', len(labels), 'pos', np.sum(labels))
-    a_vecs = np.stack(a_vecs, axis=0)
-    b_vecs = np.stack(b_vecs, axis=0)
-    labels = np.stack(labels, axis=0)
-    return a_vecs, b_vecs, labels
+        a_vecs_negs.append(vec1[1])
+        b_vecs_negs.append(vec2[1])
 
-class MyTransformer(TransformerModel, with_pl=True):
-    def __init__(self,*args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
-        self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
-        self.metric_product = ArcMarginProduct(512,self.config.num_labels,s=30.0, m=0.50, easy_margin=False)
+    print('pos sample', num_pos, ' neg sample ',num_neg)
 
-        loss_type = 'focal_loss'
-        if loss_type == 'focal_loss':
-            self.loss_fn = FocalLoss(gamma=2)
-        else:
-            self.loss_fn = torch.nn.CrossEntropyLoss()
+    a_vecs_pos = np.stack(a_vecs_pos, axis=0)
+    b_vecs_pos = np.stack(b_vecs_pos, axis=0)
+
+    a_vecs_negs = np.stack(a_vecs_negs, axis=0)
+    b_vecs_negs = np.stack(b_vecs_negs, axis=0)
+
+    return a_vecs_pos, b_vecs_pos, a_vecs_negs,b_vecs_negs
+
+def evaluate_sample(vec_maps):
+    a_vecs_pos, b_vecs_pos, a_vecs_negs, b_vecs_negs = choise_samples_from_classvectors(vec_maps)
+    pos_labels = np.ones(shape=(len(a_vecs_pos)), dtype=np.int32)
+    neg_labels = np.zeros(shape=(len(a_vecs_negs)), dtype=np.int32)
+
+    a_vecs = transform_and_normalize(a_vecs_pos)
+    b_vecs = transform_and_normalize(b_vecs_pos)
+    sims = (a_vecs * b_vecs).sum(axis=1)
+    corrcoef1 = compute_corrcoef(pos_labels, sims)
+
+    a_vecs = transform_and_normalize(a_vecs_negs)
+    b_vecs = transform_and_normalize(b_vecs_negs)
+    sims = (a_vecs * b_vecs).sum(axis=1)
+    corrcoef2 = compute_corrcoef(neg_labels, sims)
+
+    a_vecs = transform_and_normalize(np.concatenate([a_vecs_pos, a_vecs_negs], axis=0))
+    b_vecs = transform_and_normalize(np.concatenate([b_vecs_pos, b_vecs_negs], axis=0))
+    sims = (a_vecs * b_vecs).sum(axis=1)
+    corrcoef = compute_corrcoef(np.concatenate([pos_labels, neg_labels], axis=0), sims)
+
+    print('*' * 30)
+    print('pos spearman ', corrcoef1)
+    print('neg spearman ', corrcoef2)
+    print('total spearman ', corrcoef)
+    return corrcoef
+
+class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
+    def __init__(self,*args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
+        self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
+        self.loss_fn = CircleLoss(m=0.25, gamma=64)
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
-            (self.feat_head, self.config.task_specific_params['learning_rate_for_task']),
-            (self.metric_product, self.config.task_specific_params['learning_rate_for_task']),
-            (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
+            (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
     def compute_loss(self, *args,**batch) -> tuple:
-        labels: torch.Tensor = batch.pop('labels',None)
+        
+        labels: torch.Tensor = batch.pop('labels', None)
         outputs = self.model(*args,**batch)
         logits = self.feat_head(outputs[0][:, 0, :])
         # logits = torch.tan(logits)
         # logits = F.normalize(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)
-            metric_logits = self.metric_product(logits, labels)
-            loss = self.loss_fn(metric_logits, labels)
-            outputs = (loss.mean(), logits, labels)
+            loss = self.loss_fn(F.normalize(logits), labels)
+            outputs = (loss, logits, labels)
         else:
             outputs = (logits,)
         return outputs
 
+
+    def forward(self,*args, **batch):
+        return self.compute_loss(*args,**batch)
 
 
 
@@ -247,13 +268,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 if label not in vec_maps:
                     vec_maps[label] = []
                 vec_maps[label].append(logit)
-        eval_samples = choise_samples_from_classvectors(vec_maps)
 
-        a_vecs, b_vecs, labels = eval_samples
-        a_vecs = transform_and_normalize(a_vecs)
-        b_vecs = transform_and_normalize(b_vecs)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels, sims)
+        corrcoef = evaluate_sample(vec_maps)
+
         f1 = corrcoef
 
         best_f1 = self.best.get('f1',-np.inf)

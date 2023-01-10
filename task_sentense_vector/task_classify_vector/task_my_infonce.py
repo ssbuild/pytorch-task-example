@@ -37,10 +37,10 @@ train_info_args = {
     'do_train': True,
     'do_eval': True,
     'do_test': False,
-    'train_file': '/data/record/cse_1226/train_pos_neg.record',
-    'eval_file': '/data/record/cse_1226/eval.record',
+    'train_file': '/data/record/cse_0110/train_pos_neg.record',
+    'eval_file': '/data/record/cse_0110/eval.record',
     # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
-    'label_file': '/data/record/cse_1226/labels_122.txt',
+    'label_file': '/data/record/cse_0110/labels_122.txt',
     'learning_rate': 3e-5,
     'max_steps': 120000,
     'max_epochs': 1,
@@ -202,47 +202,72 @@ def compute_corrcoef(x, y):
     return scipy.stats.spearmanr(x, y).correlation
 
 def choise_samples_from_classvectors(vec_maps: dict):
-    a_vecs,b_vecs,labels = [],[],[]
+    num_pos,num_neg = 0, 0
+    a_vecs_pos,b_vecs_pos,a_vecs_negs,b_vecs_negs = [],[],[],[]
     for k in vec_maps:
         obj_list = vec_maps[k]
-        val = [obj_list[ids]
-               for ids in
-               np.random.choice(list(range(len(obj_list))), min(1000, len(obj_list)))
-               ]
-        if len(val) > 2:
+        if len(obj_list) > 2:
+            val = [obj_list[ids] for ids in np.random.choice(list(range(len(obj_list))),size= min(1000, len(obj_list)),replace=False)]
             for j in range(0, len(val) // 2, 2):
-                a_vecs.append(val[j])
-                b_vecs.append(val[j + 1])
-                labels.append(1)
+                num_pos += 1
+                a_vecs_pos.append(val[j])
+                b_vecs_pos.append(val[j + 1])
+    vec_all = []
+    for k,vec in vec_maps.items():
+        vec_all.append((k,vec))
 
-    for k1 in vec_maps.keys():
-        for k2 in vec_maps.keys():
-            if k1 == k2:
-                continue
+    shuffle_idx = np.arange(0,len(vec_all))
+    np.random.shuffle(shuffle_idx)
 
-            obj_list1 = vec_maps[k1]
-            val1 = [obj_list1[ids]
-                    for ids in
-                    np.random.choice(list(range(len(obj_list1))), min(10, len(obj_list1)))
-                    ]
 
-            obj_list2 = vec_maps[k2]
-            val2 = [obj_list2[ids]
-                    for ids in
-                    np.random.choice(list(range(len(obj_list2))), min(10, len(obj_list2)))
-                    ]
+    for i in range(0,shuffle_idx,2):
+        vec1 = vec_all[i]
+        vec2 = vec_all[i + 1]
+        if vec1[0] == vec2[0]:
+            continue
+        num_neg += 1
 
-            if val1 and val2:
-                for j in range(min(len(val1), len(val2))):
-                    a_vecs.append(val1[j])
-                    b_vecs.append(val2[j])
-                    labels.append(0)
+        if num_neg > num_pos * 2:
+            break
 
-    print('total sample', len(labels), 'pos', np.sum(labels))
-    a_vecs = np.stack(a_vecs, axis=0)
-    b_vecs = np.stack(b_vecs, axis=0)
-    labels = np.stack(labels, axis=0)
-    return a_vecs, b_vecs, labels
+        a_vecs_negs.append(vec1[1])
+        b_vecs_negs.append(vec2[1])
+
+    print('pos sample', num_pos, ' neg sample ',num_neg)
+
+    a_vecs_pos = np.stack(a_vecs_pos, axis=0)
+    b_vecs_pos = np.stack(b_vecs_pos, axis=0)
+
+    a_vecs_negs = np.stack(a_vecs_negs, axis=0)
+    b_vecs_negs = np.stack(b_vecs_negs, axis=0)
+
+    return a_vecs_pos, b_vecs_pos, a_vecs_negs,b_vecs_negs
+
+def evaluate_sample(vec_maps):
+    a_vecs_pos, b_vecs_pos, a_vecs_negs, b_vecs_negs = choise_samples_from_classvectors(vec_maps)
+    pos_labels = np.ones(shape=(len(a_vecs_pos)), dtype=np.int32)
+    neg_labels = np.zeros(shape=(len(a_vecs_negs)), dtype=np.int32)
+
+    a_vecs = transform_and_normalize(a_vecs_pos)
+    b_vecs = transform_and_normalize(b_vecs_pos)
+    sims = (a_vecs * b_vecs).sum(axis=1)
+    corrcoef1 = compute_corrcoef(pos_labels, sims)
+
+    a_vecs = transform_and_normalize(a_vecs_negs)
+    b_vecs = transform_and_normalize(b_vecs_negs)
+    sims = (a_vecs * b_vecs).sum(axis=1)
+    corrcoef2 = compute_corrcoef(neg_labels, sims)
+
+    a_vecs = transform_and_normalize(np.concatenate([a_vecs_pos, a_vecs_negs], axis=0))
+    b_vecs = transform_and_normalize(np.concatenate([b_vecs_pos, b_vecs_negs], axis=0))
+    sims = (a_vecs * b_vecs).sum(axis=1)
+    corrcoef = compute_corrcoef(np.concatenate([pos_labels, neg_labels], axis=0), sims)
+
+    print('*' * 30)
+    print('pos spearman ', corrcoef1)
+    print('neg spearman ', corrcoef2)
+    print('total spearman ', corrcoef)
+    return corrcoef
 
 class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
     def __init__(self,*args, **kwargs):
@@ -329,13 +354,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 if label not in vec_maps:
                     vec_maps[label] = []
                 vec_maps[label].append(logit)
-        eval_samples = choise_samples_from_classvectors(vec_maps)
 
-        a_vecs, b_vecs, labels = eval_samples
-        a_vecs = transform_and_normalize(a_vecs)
-        b_vecs = transform_and_normalize(b_vecs)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels, sims)
+        corrcoef = evaluate_sample(vec_maps)
+
         f1 = corrcoef
 
         best_f1 = self.best.get('f1',-np.inf)
