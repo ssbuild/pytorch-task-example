@@ -3,6 +3,7 @@
 # @FileName: split_record.py
 
 import os
+import random
 
 import numpy as np
 from fastdatasets.record import load_dataset as Loader, gfile, RECORD, WriterObject
@@ -25,6 +26,8 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
     # all_example = all_example[:10000]
     data_size = len(all_example)
     shuffle_idx = list(range(data_size))
+    random.shuffle(shuffle_idx)
+
     writer_train = WriterObject(output_train_file, options=TFRecordOptions(compression_type='GZIP'))
     writer_eval = WriterObject(output_eval_file,options=TFRecordOptions(compression_type='GZIP'))
 
@@ -34,7 +37,7 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
     for i in tqdm(shuffle_idx, desc='shuffle record'):
         example = all_example[i]
 
-        if (i + 1) % 10 == 0:
+        if (i + 1) % 15 == 0:
             num_eval += 1
             writer = writer_eval
         else:
