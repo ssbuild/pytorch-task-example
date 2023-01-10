@@ -140,48 +140,71 @@ def compute_corrcoef(x, y):
 
 
 
-def choise_samples_from_classvectors(vec_maps: dict):
-    num_pos,num_neg = 0, 0
-    a_vecs_pos,b_vecs_pos,a_vecs_neg,b_vecs_neg = [],[],[],[]
-    for k in vec_maps:
-        obj_list = vec_maps[k]
-        if len(obj_list) > 2:
-            vec_curs = [obj_list[ids] for ids in np.random.choice(list(range(len(obj_list))),size= min(1000, len(obj_list)),replace=False)]
-            for i in range(0,len(vec_curs) // 2 * 2,2):
-                num_pos += 1
-                a_vecs_pos.append(vec_curs[i])
-                b_vecs_pos.append(vec_curs[i+1])
-
-    vec_all = []
-    for k,vecs in vec_maps.items():
-        for vec in vecs:
-            vec_all.append((k,vec))
-
-    shuffle_idx = np.arange(0,len(vec_all))
-    np.random.shuffle(shuffle_idx)
-    for i1,i2 in zip(shuffle_idx[::2],shuffle_idx[1::2]):
-        vec1 = vec_all[i1]
-        vec2 = vec_all[i2]
-        if vec1[0] == vec2[0]:
+def generate_pair_example(all_example_dict: dict):
+    all_example_pos,all_example_neg = [],[]
+    all_keys = list(all_example_dict.keys())
+    np.random.shuffle(all_keys)
+    all_example_num = {lable: list(range(len(all_example_dict[lable]))) for lable in all_example_dict}
+    for pos_label in all_keys:
+        examples = all_example_dict[pos_label]
+        idx_list: list
+        idx_list_negs: list
+        idx_list = all_example_num[pos_label]
+        if len(idx_list) == 0:
             continue
-        if num_neg > num_pos * 2:
+
+        num_size = int(min(np.random.randint(300,1000), int(len(idx_list) * 0.5)))
+        if num_size < 2:
+            continue
+
+        idx = np.random.choice(idx_list, replace=False, size=num_size)
+        for i1,i2 in zip(idx[::2],idx[1::2]):
+            v1 = examples[i1]
+            v2 = examples[i2]
+            idx_list.remove(i1)
+            idx_list.remove(i2)
+            all_example_pos.append((v1, v2))
+
+        # 去除空标签数据
+        if len(idx_list) <= 1:
+            all_keys.remove(pos_label)
+    all_example = []
+    for k,d_list in all_example_dict.items():
+        for d in d_list:
+            all_example.append((k,d))
+
+    idx_list = list(range(len(all_example)))
+    np.random.shuffle(idx_list)
+
+    while len(idx_list) > 1:
+        flag = False
+        k1,e1 = all_example[idx_list.pop(0)]
+        for i in idx_list[1:]:
+            k2,e2 = all_example[i]
+            if k1 != k2:
+                all_example_neg.append((e1,e2))
+                idx_list.remove(i)
+                if len(all_example_neg) > len(all_example_pos) * 10:
+                    flag = True
+                    break
+        if flag:
             break
-        num_neg += 1
-        a_vecs_neg.append(vec1[1])
-        b_vecs_neg.append(vec2[1])
+    print('pos num',len(all_example_pos),'neg num',len(all_example_neg) )
+    return all_example_pos,all_example_neg
+def choise_samples_from_classvectors(vec_maps: dict):
+    all_example_pos,all_example_neg = generate_pair_example(vec_maps)
+    examples = all_example_pos + all_example_neg
+    a_vecs = [e[0] for e in examples]
+    b_vecs = [e[1] for e in examples]
 
-    print('pos sample', num_pos, ' neg sample ',num_neg)
-
-    a_vecs = np.stack(a_vecs_pos + a_vecs_neg, axis=0)
-    b_vecs = np.stack(b_vecs_pos + b_vecs_neg, axis=0)
-    pos_labels = np.ones(shape=(len(a_vecs_pos)), dtype=np.int32)
-    neg_labels = np.zeros(shape=(len(a_vecs_neg)), dtype=np.int32)
+    a_vecs = np.stack(a_vecs, axis=0)
+    b_vecs = np.stack(b_vecs, axis=0)
+    pos_labels = np.ones(shape=(len(all_example_pos)), dtype=np.int32)
+    neg_labels = np.zeros(shape=(len(all_example_neg)), dtype=np.int32)
     labels = np.concatenate([pos_labels, neg_labels], axis=0)
-
     return a_vecs,b_vecs,labels
 
-def evaluate_sample(vec_maps):
-    a_vecs,b_vecs,labels = choise_samples_from_classvectors(vec_maps)
+def evaluate_sample(a_vecs,b_vecs,labels):
 
     a_vecs = transform_and_normalize(a_vecs)
     b_vecs = transform_and_normalize(b_vecs)
@@ -240,25 +263,47 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
-        vec_maps = {}
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+        if not hasattr(self,'pos_data'):
+            self.pos_data = None
+            self.neg_data = None
+
+        if self.pos_data is None:
+            eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
+            all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
+            map_data = {}
+            for d in all_data:
+                label = np.squeeze(d['labels']).tolist()
+                if label not in map_data:
+                    map_data[label] = []
+                map_data[label].append(d)
+            self.pos_data,self.neg_data = generate_pair_example(map_data)
+
+        pos_data = self.pos_data
+        neg_data = self.neg_data
+        a_data = [_[0] for _ in pos_data + neg_data]
+        b_data = [_[1] for _ in pos_data + neg_data]
+        labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
+
+        t_data = a_data + b_data
+        from fastdatasets.torch_dataset import Dataset as torch_Dataset
+        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+
+        vecs = []
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch,i)
-            b_logits, b_labels = o['outputs']
+            b_logits, _ = o['outputs']
             for j in range(len(b_logits)):
                 logit = np.asarray(b_logits[j], dtype=np.float32)
-                label = np.asarray(b_labels[j], dtype=np.int32)
+                vecs.append(logit)
 
-                label = label.squeeze().tolist()
-                if label not in vec_maps:
-                    vec_maps[label] = []
-                vec_maps[label].append(logit)
+        a_vecs = np.stack(vecs[:len(a_data)],axis=0)
+        b_vecs = np.stack(vecs[len(a_data):],axis=0)
 
-        corrcoef = evaluate_sample(vec_maps)
+        corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
 
         f1 = corrcoef
 

@@ -164,7 +164,7 @@ def choise_samples_from_classvectors(vec_maps: dict):
             continue
         num_neg += 1
 
-        if num_neg > num_pos * 2:
+        if num_neg > num_pos * 10:
             break
 
         a_vecs_negs.append(vec1[1])

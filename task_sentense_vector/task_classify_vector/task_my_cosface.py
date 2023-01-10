@@ -122,9 +122,10 @@ class NN_DataHelper(DataHelper):
 
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
-        if 'token_type_ids' in o:
-            o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-
+        if 'input_ids2' in o:
+            max_len2 = torch.max(o.pop('seqlen2'))
+            o['input_ids2'] = o['input_ids2'][:, :max_len2]
+            o['attention_mask2'] = o['attention_mask2'][:, :max_len2]
         return o
     
 def transform_and_normalize(vecs, kernel=None, bias=None):
