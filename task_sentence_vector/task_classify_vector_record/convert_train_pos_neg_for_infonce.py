@@ -9,7 +9,7 @@ import numpy as np
 from fastdatasets.record import load_dataset as Loader, gfile, RECORD, NumpyWriter
 from tqdm import tqdm
 
-
+#从分类数据构造正负样本池
 def gen_pos_neg_records(all_example):
     all_example_new = []
     all_keys = list(all_example.keys())
@@ -27,7 +27,6 @@ def gen_pos_neg_records(all_example):
 
         if len(idx_list) == 0:
             continue
-
 
         one_sample_pos, one_sample_neg = [], []
         idx = np.random.choice(idx_list, replace=False,size=min(10, len(idx_list)))
@@ -96,14 +95,8 @@ def make_pos_neg_records(input_record_filenames, output_file, compression_type='
 
     print(all_example.keys())
     all_example_new = gen_pos_neg_records(all_example)
-
-
-
     print('all_example_new',len(all_example_new))
-
-
     writer = NumpyWriter(output_file, options=options)
-
     shuffle_idx = list(range(len(all_example_new)))
     random.shuffle(shuffle_idx)
 
@@ -137,14 +130,6 @@ def make_pos_neg_records(input_record_filenames, output_file, compression_type='
 
 
 if __name__ == '__main__':
-
-
-
-    example_files = r'/home/tk/train/make_big_data/pos_neg/train.record'
-
-    output_train_file = os.path.join('/home/tk/train/make_big_data/pos_neg/train_pos_neg.record')
-
-
-
-    make_pos_neg_records(input_record_filenames=example_files,
-                         output_file=output_train_file, )
+    example_files = './output/dataset_0-train.record'
+    output_train_file = os.path.join('./output/train_pos_neg.record')
+    make_pos_neg_records(input_record_filenames=example_files,output_file=output_train_file, )

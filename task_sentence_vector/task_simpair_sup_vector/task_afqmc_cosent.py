@@ -137,9 +137,12 @@ class NN_DataHelper(DataHelper):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
+    print('*' * 30,'evaluating....',len(a_vecs))
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
+    print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
     correlation,_  = stats.spearmanr(labels,sims)
-    print('*' * 30,'spearman ', correlation)
+    print('spearman ', correlation)
     return correlation
 
 class MyTransformer(TransformerModel, with_pl=True):

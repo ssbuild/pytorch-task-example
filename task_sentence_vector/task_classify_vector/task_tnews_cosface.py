@@ -198,7 +198,7 @@ def generate_pair_example(all_example_dict: dict):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....')
+    print('*' * 30,'evaluating....',len(a_vecs))
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
@@ -294,7 +294,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         t_data = a_data + b_data
         eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
         vecs = []
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data)//training_args.eval_batch_size,desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch,i)

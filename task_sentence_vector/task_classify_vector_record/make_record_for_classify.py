@@ -21,10 +21,14 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': False,
-    'train_file': '/data/nlp/nlp_train_data/lawcup2018/top122/process/*.json',
+    # 'train_file': '/data/nlp/nlp_train_data/lawcup2018/top122/process/*.json',
+    # 'eval_file': '',
+    # 'test_file': '',
+    # 'label_file': '/data/nlp/nlp_train_data/lawcup2018/top122/labels_122.txt',
+    'train_file': '/data/nlp/nlp_train_data/clue/tnews/train.json',
     'eval_file': '',
     'test_file': '',
-    'label_file': '/data/nlp/nlp_train_data/lawcup2018/top122/labels_122.txt',
+    'label_file': '/data/nlp/nlp_train_data/clue/tnews/labels.txt',
     'learning_rate': 5e-5,
     'max_epochs': 3,
     'train_batch_size': 10,
@@ -98,7 +102,11 @@ class NN_DataHelper(DataHelper):
                     jd = json.loads(line)
                     if not jd:
                         continue
-                    D.append((jd['text'], jd.get('label', None)))
+                    if 'text' in jd:
+                        text = jd['text']
+                    else:
+                        text = jd['sentence']
+                    D.append((text, jd.get('label', None)))
         random.shuffle(D)
         return D
 
