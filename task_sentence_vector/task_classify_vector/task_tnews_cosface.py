@@ -198,6 +198,8 @@ def generate_pair_example(all_example_dict: dict):
 
 def evaluate_sample(a_vecs,b_vecs,labels):
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    print(sims[:5] + sims[-5:])
+    print(labels[:5] + labels[-5:])
     correlation,_  = stats.spearmanr(labels,sims)
     print('*' * 30,'spearman ', correlation)
     return correlation
