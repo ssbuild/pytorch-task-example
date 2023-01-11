@@ -230,7 +230,8 @@ if __name__== '__main__':
                                                                        shuffle=False,
                                                                        mode='test'))
 
-    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
+    #制作数据集已经打乱，读取不能打乱数据
+    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=False, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True)
 
