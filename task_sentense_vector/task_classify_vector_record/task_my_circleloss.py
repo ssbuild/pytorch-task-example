@@ -259,21 +259,19 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         pl_module: MyTransformer
-
+        options = TFRecordOptions(compression_type='GZIP')
         #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
 
-        if not hasattr(self,'pos_data'):
-            self.pos_data = None
-            self.neg_data = None
 
-        data_dir = os.path.dirname(dataHelper.eval_files[0])
+        data_dir = os.path.dirname(data_args.eval_file[0])
         eval_pos_cache_file = os.path.join(data_dir, 'eval_pos.record.cache')
         eval_neg_cache_file = os.path.join(data_dir, 'eval_neg.record.cache')
 
         if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
-            eval_datasets_pos = dataHelper.load_dataset(eval_pos_cache_file)
-            eval_datasets_neg = dataHelper.load_dataset(eval_neg_cache_file)
+            eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,options=options).parse_from_numpy_writer()
+            eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,options=options).parse_from_numpy_writer()
+            print('pos num',len(eval_datasets_pos),'neg num',len(eval_datasets_neg))
             pos_data = [(eval_datasets_pos[i], eval_datasets_pos[i + 1]) for i in range(0, len(eval_datasets_pos), 2)]
             neg_data = [(eval_datasets_neg[i], eval_datasets_neg[i + 1]) for i in range(0, len(eval_datasets_neg), 2)]
         else:
@@ -287,13 +285,13 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 map_data[label].append(d)
             pos_data,neg_data = generate_pair_example(map_data)
 
-            f_out = record.NumpyWriter(eval_pos_cache_file,options=TFRecordOptions(compression_type='GZIP'))
+            f_out = record.NumpyWriter(eval_pos_cache_file,options=options)
             for pair in pos_data:
                 f_out.write(pair[0])
                 f_out.write(pair[1])
             f_out.close()
 
-            f_out = record.NumpyWriter(eval_neg_cache_file, options=TFRecordOptions(compression_type='GZIP'))
+            f_out = record.NumpyWriter(eval_neg_cache_file, options=options)
             for pair in neg_data:
                 f_out.write(pair[0])
                 f_out.write(pair[1])
