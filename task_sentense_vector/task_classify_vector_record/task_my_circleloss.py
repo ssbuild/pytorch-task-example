@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import copy
 import logging
 import os.path
 import typing
@@ -15,6 +16,7 @@ from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
+from tfrecords import TFRecordOptions
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
@@ -139,56 +141,70 @@ def compute_corrcoef(x, y):
     """
     return scipy.stats.spearmanr(x, y).correlation
 
+
 def generate_pair_example(all_example_dict: dict):
     all_example_dict = copy.copy(all_example_dict)
 
-    all_example_pos,all_example_neg = [],[]
+    all_example_pos, all_example_neg = [], []
     all_keys = list(all_example_dict.keys())
     np.random.shuffle(all_keys)
+
+    num_all = 0
+    for k, v in all_example_dict.items():
+        num_all += len(v)
+
+    pos_num_max = num_all // 2 // 5
 
     for pos_label in all_keys:
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(min(np.random.randint(300,1000), int(len(examples) * 0.5)))
+        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,50,dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))
         ids = np.random.choice(id_list, replace=False, size=num_size)
-        ids = sorted(ids,reverse=True)
-        for i1,i2 in zip(ids[::2],ids[1::2]):
+        ids = sorted(ids, reverse=True)
+
+        flag = False
+        for i1, i2 in zip(ids[::2], ids[1::2]):
             v1 = examples[i1]
             v2 = examples[i2]
             examples.pop(i1)
             examples.pop(i2)
             all_example_pos.append((v1, v2))
+            if len(all_example_pos) >= pos_num_max:
+                break
         # 去除空标签数据
         if len(examples) <= 1:
             all_keys.remove(pos_label)
+        if flag:
+            break
 
     flat_examples = []
     for k in all_keys:
         d_list = all_example_dict[k]
         for d in d_list:
-            flat_examples.append((k,d))
+            flat_examples.append((k, d))
     print('construct neg from {} flat_examples'.format(len(flat_examples)))
     idx_list = list(range(len(flat_examples)))
     np.random.shuffle(idx_list)
     while len(idx_list) >= 2:
         flag = False
-        k1,e1 = flat_examples[idx_list.pop(0)]
+        k1, e1 = flat_examples[idx_list.pop(0)]
         for i in idx_list[1:]:
-            k2,e2 = flat_examples[i]
+            k2, e2 = flat_examples[i]
             if k1 != k2:
-                all_example_neg.append((e1,e2))
+                all_example_neg.append((e1, e2))
                 idx_list.remove(i)
-                if len(all_example_neg) > len(all_example_pos) * 10:
+                if len(all_example_neg) > len(all_example_pos) * 5:
                     flag = True
+                    break
                 break
         if flag:
             break
-    print('pos num',len(all_example_pos),'neg num',len(all_example_neg) )
-    return all_example_pos,all_example_neg
+    print('pos num', len(all_example_pos), 'neg num', len(all_example_neg))
+    return all_example_pos, all_example_neg
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
@@ -232,6 +248,8 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
 
 
 
+from fastdatasets.torch_dataset import Dataset as torch_Dataset
+from fastdatasets import record
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
         super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
@@ -249,7 +267,16 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             self.pos_data = None
             self.neg_data = None
 
-        if self.pos_data is None:
+        data_dir = os.path.dirname(dataHelper.eval_files[0])
+        eval_pos_cache_file = os.path.join(data_dir, 'eval_pos.record.cache')
+        eval_neg_cache_file = os.path.join(data_dir, 'eval_neg.record.cache')
+
+        if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
+            eval_datasets_pos = dataHelper.load_dataset(eval_pos_cache_file)
+            eval_datasets_neg = dataHelper.load_dataset(eval_neg_cache_file)
+            pos_data = [(eval_datasets_pos[i], eval_datasets_pos[i + 1]) for i in range(0, len(eval_datasets_pos), 2)]
+            neg_data = [(eval_datasets_neg[i], eval_datasets_neg[i + 1]) for i in range(0, len(eval_datasets_neg), 2)]
+        else:
             eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
             all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
             map_data = {}
@@ -258,16 +285,26 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 if label not in map_data:
                     map_data[label] = []
                 map_data[label].append(d)
-            self.pos_data,self.neg_data = generate_pair_example(map_data)
+            pos_data,neg_data = generate_pair_example(map_data)
 
-        pos_data = self.pos_data
-        neg_data = self.neg_data
+            f_out = record.NumpyWriter(eval_pos_cache_file,options=TFRecordOptions(compression_type='GZIP'))
+            for pair in pos_data:
+                f_out.write(pair[0])
+                f_out.write(pair[1])
+            f_out.close()
+
+            f_out = record.NumpyWriter(eval_neg_cache_file, options=TFRecordOptions(compression_type='GZIP'))
+            for pair in neg_data:
+                f_out.write(pair[0])
+                f_out.write(pair[1])
+            f_out.close()
+
         a_data = [_[0] for _ in pos_data + neg_data]
         b_data = [_[1] for _ in pos_data + neg_data]
         labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
 
         t_data = a_data + b_data
-        from fastdatasets.torch_dataset import Dataset as torch_Dataset
+
         eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
 
@@ -287,13 +324,13 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
 
         f1 = corrcoef
-
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
             logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
+
 
 
 if __name__ == '__main__':

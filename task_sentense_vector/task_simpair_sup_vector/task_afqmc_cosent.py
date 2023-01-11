@@ -182,42 +182,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         return outputs
 
 
-    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        print('validation_epoch_end...')
-        a_logits_all,b_logits_all,labels_all = None,None,None
-        for i, o in tqdm(enumerate(outputs), total=len(outputs)):
-            a_logits, b_logits, labels = o['outputs']
-            if a_logits_all is None:
-                a_logits_all = a_logits
-                b_logits_all = b_logits
-                labels_all = labels
-            else:
-                a_logits_all = np.concatenate([a_logits_all,a_logits],axis=0)
-                b_logits_all = np.concatenate([b_logits_all, b_logits], axis=0)
-                labels_all = np.concatenate([labels_all, labels], axis=0)
 
-        a_vecs = transform_and_normalize(a_logits_all)
-        b_vecs = transform_and_normalize(b_logits_all)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels_all, sims)
-
-        print('*' * 30,corrcoef)
-        self.log('corrcoef',corrcoef,prog_bar=True)
-
-
-def transform_and_normalize(vecs, kernel=None, bias=None):
-    """应用变换，然后标准化
-    """
-    if not (kernel is None or bias is None):
-        vecs = (vecs + bias).dot(kernel)
-    norms = (vecs ** 2).sum(axis=1, keepdims=True) ** 0.5
-    return vecs / np.clip(norms, 1e-8, np.inf)
-
-
-def compute_corrcoef(x, y):
-    """Spearman相关系数
-    """
-    return scipy.stats.spearmanr(x, y).correlation
 
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
