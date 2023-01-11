@@ -196,10 +196,13 @@ def generate_pair_example(all_example_dict: dict):
     return all_example_pos, all_example_neg
 
 
-def evaluate_sample(a_vecs, b_vecs, labels):
-    sims = 1 - paired_distances(a_vecs, b_vecs, metric='cosine')
-    correlation, _ = stats.spearmanr(labels, sims)
-    print('*' * 30, 'spearman ', correlation)
+def evaluate_sample(a_vecs,b_vecs,labels):
+    print('*' * 30,'evaluating....')
+    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
+    print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
+    correlation,_  = stats.spearmanr(labels,sims)
+    print('spearman ', correlation)
     return correlation
 
 
@@ -232,31 +235,26 @@ class MyTransformer(TransformerModel, with_pl=True):
 
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from fastdatasets import record
-
-
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
-    def __init__(self, *args, **kwargs):
-        super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
+    def __init__(self,*args,**kwargs):
+        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
-            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         pl_module: MyTransformer
         options = TFRecordOptions(compression_type='GZIP')
-        # 当前设备
+        #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-
         data_dir = os.path.dirname(data_args.eval_file[0])
         eval_pos_cache_file = os.path.join(data_dir, 'eval_pos.record.cache')
         eval_neg_cache_file = os.path.join(data_dir, 'eval_neg.record.cache')
-
+        # 缓存文件
         if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
-            eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,
-                                                                  options=options).parse_from_numpy_writer()
-            eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,
-                                                                  options=options).parse_from_numpy_writer()
-            print('pos num', len(eval_datasets_pos), 'neg num', len(eval_datasets_neg))
+            eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,options=options).parse_from_numpy_writer()
+            eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,options=options).parse_from_numpy_writer()
+            print('pos num',len(eval_datasets_pos) // 2,'neg num',len(eval_datasets_neg) // 2)
             pos_data = [(eval_datasets_pos[i], eval_datasets_pos[i + 1]) for i in range(0, len(eval_datasets_pos), 2)]
             neg_data = [(eval_datasets_neg[i], eval_datasets_neg[i + 1]) for i in range(0, len(eval_datasets_neg), 2)]
         else:
@@ -268,9 +266,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 if label not in map_data:
                     map_data[label] = []
                 map_data[label].append(d)
-            pos_data, neg_data = generate_pair_example(map_data)
+            pos_data,neg_data = generate_pair_example(map_data)
 
-            f_out = record.NumpyWriter(eval_pos_cache_file, options=options)
+            f_out = record.NumpyWriter(eval_pos_cache_file,options=options)
             for pair in pos_data:
                 f_out.write(pair[0])
                 f_out.write(pair[1])
@@ -284,26 +282,25 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         a_data = [_[0] for _ in pos_data + neg_data]
         b_data = [_[1] for _ in pos_data + neg_data]
-        labels = np.concatenate([np.ones(len(pos_data), dtype=np.int32), np.zeros(len(neg_data), dtype=np.int32)])
+        labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
         t_data = a_data + b_data
-        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,
-                                   collate_fn=dataHelper.collate_fn)
+        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
         vecs = []
-        for i, batch in tqdm(enumerate(eval_datasets), total=len(t_data), desc='evalute'):
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
-            o = pl_module.validation_step(batch, i)
+            o = pl_module.validation_step(batch,i)
             b_logits, _ = o['outputs']
             for j in range(len(b_logits)):
                 logit = np.asarray(b_logits[j], dtype=np.float32)
                 vecs.append(logit)
 
-        a_vecs = np.stack(vecs[:len(a_data)], axis=0)
-        b_vecs = np.stack(vecs[len(a_data):], axis=0)
+        a_vecs = np.stack(vecs[:len(a_data)],axis=0)
+        b_vecs = np.stack(vecs[len(a_data):],axis=0)
 
-        corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
+        corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
         f1 = corrcoef
-        best_f1 = self.best.get('f1', -np.inf)
+        best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1

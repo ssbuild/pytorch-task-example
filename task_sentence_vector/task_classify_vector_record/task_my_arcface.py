@@ -250,12 +250,10 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         options = TFRecordOptions(compression_type='GZIP')
         #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-
-
         data_dir = os.path.dirname(data_args.eval_file[0])
         eval_pos_cache_file = os.path.join(data_dir, 'eval_pos.record.cache')
         eval_neg_cache_file = os.path.join(data_dir, 'eval_neg.record.cache')
-
+        # 缓存文件
         if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
             eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,options=options).parse_from_numpy_writer()
             eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,options=options).parse_from_numpy_writer()
