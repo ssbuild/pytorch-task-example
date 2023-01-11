@@ -6,7 +6,6 @@ import os
 import typing
 
 import numpy as np
-import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
@@ -15,9 +14,7 @@ from deep_training.nlp.losses.circle_loss import CircleLoss
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
-from scipy.stats import stats
+from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from tfrecords import TFRecordOptions
 from torch import nn
@@ -27,7 +24,7 @@ from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices':  1,
+    'devices': 1,
     'data_backend': 'memory_raw',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -52,18 +49,19 @@ train_info_args = {
     'max_seq_length': 128
 }
 
+
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self,data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-        sentence,label_str = data
+        sentence, label_str = data
 
         o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
         input_ids = np.asarray(o['input_ids'], dtype=np.int64)
         attention_mask = np.asarray(o['attention_mask'], dtype=np.int64)
 
-        labels = np.asarray(label2id[label_str] if label_str is not None else 0,dtype=np.int64)
+        labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
         seqlen = np.asarray(len(input_ids), dtype=np.int64)
         pad_len = max_seq_length - len(input_ids)
         if pad_len > 0:
@@ -73,12 +71,12 @@ class NN_DataHelper(DataHelper):
         d = {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
-            'labels': np.expand_dims(labels,0),
+            'labels': np.expand_dims(labels, 0),
             'seqlen': seqlen
         }
         return d
 
-    #读取标签
+    # 读取标签
     def on_get_labels(self, files: typing.List[str]):
         if files is None:
             return None, None
@@ -100,7 +98,7 @@ class NN_DataHelper(DataHelper):
         return label2id, id2label
 
     # 读取文件
-    def on_get_corpus(self, files: typing.List, mode:str):
+    def on_get_corpus(self, files: typing.List, mode: str):
         D = []
         for filename in files:
             with open(filename, mode='r', encoding='utf-8') as f:
@@ -109,9 +107,8 @@ class NN_DataHelper(DataHelper):
                     jd = json.loads(line)
                     if not jd:
                         continue
-                    D.append((jd['sentence'], jd.get('label',None)))
+                    D.append((jd['sentence'], jd.get('label', None)))
         return D
-
 
     @staticmethod
     def collate_fn(batch):
@@ -150,7 +147,8 @@ def generate_pair_example(all_example_dict: dict):
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
+        num_size = int(len(examples) // 2 // 5) if len(examples) > 100 else np.random.randint(1, min(50, len(examples)),
+                                                                                              dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))
@@ -198,18 +196,18 @@ def generate_pair_example(all_example_dict: dict):
     return all_example_pos, all_example_neg
 
 
-def evaluate_sample(a_vecs,b_vecs,labels):
-    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
-    correlation,_  = stats.spearmanr(labels,sims)
-    print('*' * 30,'spearman ', correlation)
+def evaluate_sample(a_vecs, b_vecs, labels):
+    sims = 1 - paired_distances(a_vecs, b_vecs, metric='cosine')
+    correlation, _ = stats.spearmanr(labels, sims)
+    print('*' * 30, 'spearman ', correlation)
     return correlation
 
+
 class MyTransformer(TransformerModel, with_pl=True):
-    def __init__(self,*args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
         self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
         self.loss_fn = CircleLoss(m=0.25, gamma=64)
-
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
@@ -217,16 +215,16 @@ class MyTransformer(TransformerModel, with_pl=True):
             (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def compute_loss(self, *args,**batch) -> tuple:
-        labels: torch.Tensor = batch.pop('labels',None)
-        outputs = self.model(*args,**batch)
+    def compute_loss(self, *args, **batch) -> tuple:
+        labels: torch.Tensor = batch.pop('labels', None)
+        outputs = self.model(*args, **batch)
         logits = self.feat_head(outputs[0][:, 0, :])
         # logits = torch.tan(logits)
         # logits = F.normalize(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)
-            loss = self.loss_fn(F.normalize(logits),labels)
-            outputs = (loss,logits,labels)
+            loss = self.loss_fn(F.normalize(logits), labels)
+            outputs = (loss, logits, labels)
         else:
             outputs = (logits,)
         return outputs
@@ -234,28 +232,31 @@ class MyTransformer(TransformerModel, with_pl=True):
 
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from fastdatasets import record
+
+
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
-    def __init__(self,*args,**kwargs):
-        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         pl_module: MyTransformer
         options = TFRecordOptions(compression_type='GZIP')
-        #当前设备
+        # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-
 
         data_dir = os.path.dirname(data_args.eval_file[0])
         eval_pos_cache_file = os.path.join(data_dir, 'eval_pos.record.cache')
         eval_neg_cache_file = os.path.join(data_dir, 'eval_neg.record.cache')
 
         if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
-            eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,options=options).parse_from_numpy_writer()
-            eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,options=options).parse_from_numpy_writer()
-            print('pos num',len(eval_datasets_pos),'neg num',len(eval_datasets_neg))
+            eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,
+                                                                  options=options).parse_from_numpy_writer()
+            eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,
+                                                                  options=options).parse_from_numpy_writer()
+            print('pos num', len(eval_datasets_pos), 'neg num', len(eval_datasets_neg))
             pos_data = [(eval_datasets_pos[i], eval_datasets_pos[i + 1]) for i in range(0, len(eval_datasets_pos), 2)]
             neg_data = [(eval_datasets_neg[i], eval_datasets_neg[i + 1]) for i in range(0, len(eval_datasets_neg), 2)]
         else:
@@ -267,9 +268,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 if label not in map_data:
                     map_data[label] = []
                 map_data[label].append(d)
-            pos_data,neg_data = generate_pair_example(map_data)
+            pos_data, neg_data = generate_pair_example(map_data)
 
-            f_out = record.NumpyWriter(eval_pos_cache_file,options=options)
+            f_out = record.NumpyWriter(eval_pos_cache_file, options=options)
             for pair in pos_data:
                 f_out.write(pair[0])
                 f_out.write(pair[1])
@@ -283,25 +284,26 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         a_data = [_[0] for _ in pos_data + neg_data]
         b_data = [_[1] for _ in pos_data + neg_data]
-        labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
+        labels = np.concatenate([np.ones(len(pos_data), dtype=np.int32), np.zeros(len(neg_data), dtype=np.int32)])
         t_data = a_data + b_data
-        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
         vecs = []
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
+        for i, batch in tqdm(enumerate(eval_datasets), total=len(t_data), desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
-            o = pl_module.validation_step(batch,i)
+            o = pl_module.validation_step(batch, i)
             b_logits, _ = o['outputs']
             for j in range(len(b_logits)):
                 logit = np.asarray(b_logits[j], dtype=np.float32)
                 vecs.append(logit)
 
-        a_vecs = np.stack(vecs[:len(a_data)],axis=0)
-        b_vecs = np.stack(vecs[len(a_data):],axis=0)
+        a_vecs = np.stack(vecs[:len(a_data)], axis=0)
+        b_vecs = np.stack(vecs[len(a_data):], axis=0)
 
-        corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
+        corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
         f1 = corrcoef
-        best_f1 = self.best.get('f1',-np.inf)
+        best_f1 = self.best.get('f1', -np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
@@ -309,8 +311,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             trainer.save_checkpoint(self.weight_file)
 
 
-
-if __name__== '__main__':
+if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
@@ -330,7 +331,8 @@ if __name__== '__main__':
         strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
+    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
+                                                                                data_args)
 
     token_fn_args_dict = {
         'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
@@ -368,9 +370,7 @@ if __name__== '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-    
-
-    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
+    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
@@ -384,7 +384,7 @@ if __name__== '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')

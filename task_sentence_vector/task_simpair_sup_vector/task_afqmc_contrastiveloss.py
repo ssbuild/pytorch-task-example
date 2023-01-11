@@ -15,7 +15,7 @@ from deep_training.utils.func import seq_pading
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-from scipy.stats import stats
+from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from torch import nn
 from torch.utils.data import DataLoader, IterableDataset

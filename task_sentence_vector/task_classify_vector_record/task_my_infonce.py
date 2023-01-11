@@ -16,7 +16,7 @@ from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
-from scipy.stats import stats
+from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from tfrecords import TFRecordOptions
 from torch import nn
@@ -210,7 +210,7 @@ def generate_pair_example(all_example_dict: dict):
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
+        num_size = int(len(examples) // 5) if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))

@@ -15,7 +15,7 @@ from deep_training.nlp.losses.loss_arcface import ArcMarginProduct
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from scipy.stats import stats
+from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from tfrecords import TFRecordOptions
 from torch import nn
@@ -146,7 +146,7 @@ def generate_pair_example(all_example_dict: dict):
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(len(examples) // 2 // 5) if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
+        num_size = int(len(examples) // 5) if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))
@@ -259,7 +259,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
             eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,options=options).parse_from_numpy_writer()
             eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,options=options).parse_from_numpy_writer()
-            print('pos num',len(eval_datasets_pos),'neg num',len(eval_datasets_neg))
+            print('pos num',len(eval_datasets_pos) // 2,'neg num',len(eval_datasets_neg) // 2)
             pos_data = [(eval_datasets_pos[i], eval_datasets_pos[i + 1]) for i in range(0, len(eval_datasets_pos), 2)]
             neg_data = [(eval_datasets_neg[i], eval_datasets_neg[i + 1]) for i in range(0, len(eval_datasets_neg), 2)]
         else:
