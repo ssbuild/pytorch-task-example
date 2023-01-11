@@ -17,6 +17,8 @@ from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
+from scipy.stats import stats
+from sklearn.metrics.pairwise import paired_distances
 from tfrecords import TFRecordOptions
 from torch import nn
 from torch.nn import functional as F
@@ -130,19 +132,6 @@ class NN_DataHelper(DataHelper):
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
         return o
 
-def transform_and_normalize(vecs, kernel=None, bias=None):
-    """应用变换，然后标准化
-    """
-    if not (kernel is None or bias is None):
-        vecs = (vecs + bias).dot(kernel)
-    norms = (vecs**2).sum(axis=1, keepdims=True)**0.5
-    return vecs / np.clip(norms, 1e-8, np.inf)
-
-def compute_corrcoef(x, y):
-    """Spearman相关系数
-    """
-    return scipy.stats.spearmanr(x, y).correlation
-
 
 def generate_pair_example(all_example_dict: dict):
     all_example_dict = copy.copy(all_example_dict)
@@ -161,7 +150,7 @@ def generate_pair_example(all_example_dict: dict):
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,50,dtype=np.int32)
+        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))
@@ -210,13 +199,10 @@ def generate_pair_example(all_example_dict: dict):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    a_vecs = transform_and_normalize(a_vecs)
-    b_vecs = transform_and_normalize(b_vecs)
-    sims = (a_vecs * b_vecs).sum(axis=1)
-    corrcoef = compute_corrcoef(labels,sims)
-    print('*' * 30)
-    print('spearman ', corrcoef)
-    return corrcoef
+    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    correlation,_  = stats.spearmanr(labels,sims)
+    print('*' * 30,'spearman ', correlation)
+    return correlation
 
 class MyTransformer(TransformerModel, with_pl=True):
     def __init__(self,*args,**kwargs):
@@ -298,12 +284,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         a_data = [_[0] for _ in pos_data + neg_data]
         b_data = [_[1] for _ in pos_data + neg_data]
         labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
-
         t_data = a_data + b_data
-
         eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-
-
         vecs = []
         for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
             for k in batch:
@@ -318,7 +300,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         b_vecs = np.stack(vecs[len(a_data):],axis=0)
 
         corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
-
         f1 = corrcoef
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)

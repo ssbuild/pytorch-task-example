@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import copy
 import logging
 import os.path
 import typing
@@ -15,14 +16,17 @@ from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
+from scipy.stats import stats
+from sklearn.metrics.pairwise import paired_distances
+from tfrecords import TFRecordOptions
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
-# model_base_dir = '/data/torch/bert-base-chinese'
-model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+model_base_dir = '/data/torch/bert-base-chinese'
+# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -33,21 +37,21 @@ train_info_args = {
     'config_name': os.path.join(model_base_dir, 'config.json'),
     # 语料已经制作好，不需要在转换
     'convert_file': False,
-    'do_train': False,
-    'do_eval': False,
+    'do_train': True,
+    'do_eval': True,
     'do_test': False,
-    'train_file': '/data/record/cse/train.record',
-    'eval_file': '/data/record/cse/eval.record',
+    'train_file': '/data/record/cse_0110/train.record',
+    'eval_file': '/data/record/cse_0110/eval.record',
     # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
-    'label_file': '',
-    'learning_rate': 5e-5,
+    'label_file': '/data/record/cse_0110/labels_122.txt',
+    'learning_rate': 3e-5,
     'max_steps': 120000,
     'max_epochs': 1,
     'train_batch_size': 10,
     'eval_batch_size': 10,
     'test_batch_size': 10,
     'adam_epsilon': 1e-8,
-    'gradient_accumulation_steps': 10,
+    'gradient_accumulation_steps': 20,
     'max_grad_norm': 1.0,
     'weight_decay': 0,
     'warmup_steps': 0,
@@ -86,7 +90,22 @@ class NN_DataHelper(DataHelper):
 
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
-        return None, None
+        file = files[0]
+        with open(file, mode='r', encoding='utf-8') as f:
+            lines = f.readlines()
+        labels = []
+        for line in lines:
+            line = line.replace('\r\n', '').replace('\n', '')
+            if not line:
+                continue
+            labels.append(line)
+        labels = list(set(labels))
+        labels = sorted(labels)
+        label2id = {l: i for i, l in enumerate(labels)}
+        id2label = {i: l for i, l in enumerate(labels)}
+        self.label2id = label2id
+        self.id2label = id2label
+        return self.label2id, self.id2label
 
     @staticmethod
     def collate_fn(batch):
@@ -108,65 +127,79 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-
         return o
-    
-def transform_and_normalize(vecs, kernel=None, bias=None):
-    """应用变换，然后标准化
-    """
-    if not (kernel is None or bias is None):
-        vecs = (vecs + bias).dot(kernel)
-    norms = (vecs ** 2).sum(axis=1, keepdims=True) ** 0.5
-    return vecs / np.clip(norms, 1e-8, np.inf)
 
 
-def compute_corrcoef(x, y):
-    """Spearman相关系数
-    """
-    return scipy.stats.spearmanr(x, y).correlation
+def generate_pair_example(all_example_dict: dict):
+    all_example_dict = copy.copy(all_example_dict)
 
-def choise_samples_from_classvectors(vec_maps: dict):
-    a_vecs,b_vecs,labels = [],[],[]
-    for k in vec_maps:
-        obj_list = vec_maps[k]
-        val = [obj_list[ids]
-               for ids in
-               np.random.choice(list(range(len(obj_list))), min(1000, len(obj_list)))
-               ]
-        if len(val) > 2:
-            for j in range(0, len(val) // 2, 2):
-                a_vecs.append(val[j])
-                b_vecs.append(val[j + 1])
-                labels.append(1)
+    all_example_pos, all_example_neg = [], []
+    all_keys = list(all_example_dict.keys())
+    np.random.shuffle(all_keys)
 
-    for k1 in vec_maps.keys():
-        for k2 in vec_maps.keys():
-            if k1 == k2:
-                continue
+    num_all = 0
+    for k, v in all_example_dict.items():
+        num_all += len(v)
 
-            obj_list1 = vec_maps[k1]
-            val1 = [obj_list1[ids]
-                    for ids in
-                    np.random.choice(list(range(len(obj_list1))), min(10, len(obj_list1)))
-                    ]
+    pos_num_max = num_all // 2 // 5
 
-            obj_list2 = vec_maps[k2]
-            val2 = [obj_list2[ids]
-                    for ids in
-                    np.random.choice(list(range(len(obj_list2))), min(10, len(obj_list2)))
-                    ]
+    for pos_label in all_keys:
+        examples = all_example_dict[pos_label]
+        if len(examples) == 0:
+            continue
+        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
+        if num_size < 2:
+            continue
+        id_list = list(range(len(examples)))
+        ids = np.random.choice(id_list, replace=False, size=num_size)
+        ids = sorted(ids, reverse=True)
 
-            if val1 and val2:
-                for j in range(min(len(val1), len(val2))):
-                    a_vecs.append(val1[j])
-                    b_vecs.append(val2[j])
-                    labels.append(0)
+        flag = False
+        for i1, i2 in zip(ids[::2], ids[1::2]):
+            v1 = examples[i1]
+            v2 = examples[i2]
+            examples.pop(i1)
+            examples.pop(i2)
+            all_example_pos.append((v1, v2))
+            if len(all_example_pos) >= pos_num_max:
+                break
+        # 去除空标签数据
+        if len(examples) <= 1:
+            all_keys.remove(pos_label)
+        if flag:
+            break
 
-    print('total sample', len(labels), 'pos', np.sum(labels))
-    a_vecs = np.stack(a_vecs, axis=0)
-    b_vecs = np.stack(b_vecs, axis=0)
-    labels = np.stack(labels, axis=0)
-    return a_vecs, b_vecs, labels
+    flat_examples = []
+    for k in all_keys:
+        d_list = all_example_dict[k]
+        for d in d_list:
+            flat_examples.append((k, d))
+    print('construct neg from {} flat_examples'.format(len(flat_examples)))
+    idx_list = list(range(len(flat_examples)))
+    np.random.shuffle(idx_list)
+    while len(idx_list) >= 2:
+        flag = False
+        k1, e1 = flat_examples[idx_list.pop(0)]
+        for i in idx_list[1:]:
+            k2, e2 = flat_examples[i]
+            if k1 != k2:
+                all_example_neg.append((e1, e2))
+                idx_list.remove(i)
+                if len(all_example_neg) > len(all_example_pos) * 5:
+                    flag = True
+                    break
+                break
+        if flag:
+            break
+    print('pos num', len(all_example_pos), 'neg num', len(all_example_neg))
+    return all_example_pos, all_example_neg
+
+
+def evaluate_sample(a_vecs,b_vecs,labels):
+    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    correlation,_  = stats.spearmanr(labels,sims)
+    print('*' * 30,'spearman ', correlation)
+    return correlation
 
 class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
     def __init__(self,*args, **kwargs):
@@ -198,32 +231,10 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
     def forward(self,*args, **batch):
         return self.compute_loss(*args,**batch)
 
-    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        print('validation_epoch_end...')
-        vec_maps = {}
-        for i, o in tqdm(enumerate(outputs), total=len(outputs)):
-            b_logits, b_labels = o['outputs']
-            for j in range(len(b_logits)):
-                logit = np.asarray(b_logits[j], dtype=np.float32)
-                label = np.asarray(b_labels[j], dtype=np.int32)
-
-                label = label.squeeze().tolist()
-                if label not in vec_maps:
-                    vec_maps[label] = []
-                vec_maps[label].append(logit)
-        eval_samples = choise_samples_from_classvectors(vec_maps)
-
-        a_vecs, b_vecs, labels = eval_samples
-        a_vecs = transform_and_normalize(a_vecs)
-        b_vecs = transform_and_normalize(b_vecs)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels, sims)
-        self.log('corrcoef', corrcoef, prog_bar=True, sync_dist=True)
-        print('corrcoef',corrcoef)
 
 
-
-
+from fastdatasets.torch_dataset import Dataset as torch_Dataset
+from fastdatasets import record
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self,*args,**kwargs):
         super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
@@ -233,35 +244,64 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         pl_module: MyTransformer
-
+        options = TFRecordOptions(compression_type='GZIP')
         #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
-        vec_maps = {}
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+
+        data_dir = os.path.dirname(data_args.eval_file[0])
+        eval_pos_cache_file = os.path.join(data_dir, 'eval_pos.record.cache')
+        eval_neg_cache_file = os.path.join(data_dir, 'eval_neg.record.cache')
+
+        if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
+            eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,options=options).parse_from_numpy_writer()
+            eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,options=options).parse_from_numpy_writer()
+            print('pos num',len(eval_datasets_pos),'neg num',len(eval_datasets_neg))
+            pos_data = [(eval_datasets_pos[i], eval_datasets_pos[i + 1]) for i in range(0, len(eval_datasets_pos), 2)]
+            neg_data = [(eval_datasets_neg[i], eval_datasets_neg[i + 1]) for i in range(0, len(eval_datasets_neg), 2)]
+        else:
+            eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
+            all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
+            map_data = {}
+            for d in all_data:
+                label = np.squeeze(d['labels']).tolist()
+                if label not in map_data:
+                    map_data[label] = []
+                map_data[label].append(d)
+            pos_data,neg_data = generate_pair_example(map_data)
+
+            f_out = record.NumpyWriter(eval_pos_cache_file,options=options)
+            for pair in pos_data:
+                f_out.write(pair[0])
+                f_out.write(pair[1])
+            f_out.close()
+
+            f_out = record.NumpyWriter(eval_neg_cache_file, options=options)
+            for pair in neg_data:
+                f_out.write(pair[0])
+                f_out.write(pair[1])
+            f_out.close()
+
+        a_data = [_[0] for _ in pos_data + neg_data]
+        b_data = [_[1] for _ in pos_data + neg_data]
+        labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
+        t_data = a_data + b_data
+        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        vecs = []
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch,i)
-            b_logits, b_labels = o['outputs']
+            b_logits, _ = o['outputs']
             for j in range(len(b_logits)):
                 logit = np.asarray(b_logits[j], dtype=np.float32)
-                label = np.asarray(b_labels[j], dtype=np.int32)
+                vecs.append(logit)
 
-                label = label.squeeze().tolist()
-                if label not in vec_maps:
-                    vec_maps[label] = []
-                vec_maps[label].append(logit)
-        eval_samples = choise_samples_from_classvectors(vec_maps)
+        a_vecs = np.stack(vecs[:len(a_data)],axis=0)
+        b_vecs = np.stack(vecs[len(a_data):],axis=0)
 
-        a_vecs, b_vecs, labels = eval_samples
-        a_vecs = transform_and_normalize(a_vecs)
-        b_vecs = transform_and_normalize(b_vecs)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels, sims)
+        corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
         f1 = corrcoef
-
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
@@ -270,11 +310,12 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             trainer.save_checkpoint(self.weight_file)
 
 
+
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(every_n_train_steps=1000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(every_n_train_steps=10000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

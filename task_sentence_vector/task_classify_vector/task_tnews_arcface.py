@@ -1,77 +1,68 @@
 # -*- coding: utf-8 -*-
 import copy
+import json
 import logging
-import os.path
+import os
 import typing
 
 import numpy as np
-import pytorch_lightning
 import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.circle_loss import CircleLoss
+from deep_training.nlp.losses.focal_loss import FocalLoss
+from deep_training.nlp.losses.loss_arcface import ArcMarginProduct
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
+from scipy.stats import stats
 from tfrecords import TFRecordOptions
 from torch import nn
-from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
-model_base_dir = '/data/torch/bert-base-chinese'
-# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+from sklearn.metrics.pairwise import paired_distances
 
 train_info_args = {
-    'devices': torch.cuda.device_count(),
-    'data_backend': 'record',
+    'devices':  1,
+    'data_backend': 'memory_raw',
     'model_type': 'bert',
-    'model_name_or_path': model_base_dir,
-    'tokenizer_name': model_base_dir,
-    'config_name': os.path.join(model_base_dir, 'config.json'),
-    # 语料已经制作好，不需要在转换
-    'convert_file': False,
+    'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': True,
-    'do_test': False,
-    'train_file': '/data/record/cse_0110/train.record',
-    'eval_file': '/data/record/cse_0110/eval.record',
-    # 'test_file': '/home/tk/train/make_big_data/output/eval.record',
-    'label_file': '/data/record/cse_0110/labels_122.txt',
-    'learning_rate': 3e-5,
-    'max_steps': 120000,
-    'max_epochs': 1,
-    'train_batch_size': 10,
-    'eval_batch_size': 10,
-    'test_batch_size': 10,
+    'train_file': '/data/nlp/nlp_train_data/clue/tnews/train.json',
+    'eval_file': '/data/nlp/nlp_train_data/clue/tnews/dev.json',
+    'test_file': '/data/nlp/nlp_train_data/clue/tnews/test.json',
+    'label_file': '/data/nlp/nlp_train_data/clue/tnews/labels.json',
+    'learning_rate': 5e-5,
+    'max_epochs': 30,
+    'train_batch_size': 80,
+    'test_batch_size': 40,
     'adam_epsilon': 1e-8,
-    'gradient_accumulation_steps': 20,
+    'gradient_accumulation_steps': 1,
     'max_grad_norm': 1.0,
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 512,
-    'eval_max_seq_length': 512,
-    'test_max_seq_length': 512,
+    'max_seq_length': 128
 }
-
 
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self,data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-        sentence, label_str = data
+        sentence,label_str = data
 
         o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
         input_ids = np.asarray(o['input_ids'], dtype=np.int64)
         attention_mask = np.asarray(o['attention_mask'], dtype=np.int64)
 
-        labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
+        labels = np.asarray(label2id[label_str] if label_str is not None else 0,dtype=np.int64)
         seqlen = np.asarray(len(input_ids), dtype=np.int64)
         pad_len = max_seq_length - len(input_ids)
         if pad_len > 0:
@@ -81,29 +72,45 @@ class NN_DataHelper(DataHelper):
         d = {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
-            'labels': labels,
+            'labels': np.expand_dims(labels,0),
             'seqlen': seqlen
         }
         return d
 
-    # 读取标签
+    #读取标签
     def on_get_labels(self, files: typing.List[str]):
-        file = files[0]
-        with open(file, mode='r', encoding='utf-8') as f:
+        if files is None:
+            return None, None
+        label_fname = files[0]
+        is_json_file = label_fname.endswith('.json')
+        D = []
+        with open(label_fname, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-        labels = []
-        for line in lines:
-            line = line.replace('\r\n', '').replace('\n', '')
-            if not line:
-                continue
-            labels.append(line)
-        labels = list(set(labels))
-        labels = sorted(labels)
-        label2id = {l: i for i, l in enumerate(labels)}
-        id2label = {i: l for i, l in enumerate(labels)}
-        self.label2id = label2id
-        self.id2label = id2label
-        return self.label2id, self.id2label
+            for line in lines:
+                line = line.replace('\r\n', '').replace('\n', '')
+                if not line: continue
+                if is_json_file:
+                    jd = json.loads(line)
+                    line = jd['label']
+                D.append(line)
+        D = sorted(list(set(D)))
+        label2id = {label: i for i, label in enumerate(D)}
+        id2label = {i: label for i, label in enumerate(D)}
+        return label2id, id2label
+
+    # 读取文件
+    def on_get_corpus(self, files: typing.List, mode:str):
+        D = []
+        for filename in files:
+            with open(filename, mode='r', encoding='utf-8') as f:
+                lines = f.readlines()
+                for line in lines:
+                    jd = json.loads(line)
+                    if not jd:
+                        continue
+                    D.append((jd['sentence'], jd.get('label',None)))
+        return D
+
 
     @staticmethod
     def collate_fn(batch):
@@ -117,29 +124,13 @@ class NN_DataHelper(DataHelper):
                     o[k].append(torch.tensor(b[k]))
         for k in o:
             o[k] = torch.stack(o[k])
-
-        o.pop('id', None)
         max_len = torch.max(o.pop('seqlen'))
-
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
         return o
-    
-def transform_and_normalize(vecs, kernel=None, bias=None):
-    """应用变换，然后标准化
-    """
-    if not (kernel is None or bias is None):
-        vecs = (vecs + bias).dot(kernel)
-    norms = (vecs ** 2).sum(axis=1, keepdims=True) ** 0.5
-    return vecs / np.clip(norms, 1e-8, np.inf)
 
-
-def compute_corrcoef(x, y):
-    """Spearman相关系数
-    """
-    return scipy.stats.spearmanr(x, y).correlation
 
 
 def generate_pair_example(all_example_dict: dict):
@@ -159,7 +150,7 @@ def generate_pair_example(all_example_dict: dict):
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,50,dtype=np.int32)
+        num_size = int(len(examples) // 2 // 5)  if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))
@@ -208,44 +199,44 @@ def generate_pair_example(all_example_dict: dict):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    a_vecs = transform_and_normalize(a_vecs)
-    b_vecs = transform_and_normalize(b_vecs)
-    sims = (a_vecs * b_vecs).sum(axis=1)
-    corrcoef = compute_corrcoef(labels,sims)
-    print('*' * 30)
-    print('spearman ', corrcoef)
-    return corrcoef
+    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    correlation,_  = stats.spearmanr(labels,sims)
+    print('*' * 30,'spearman ', correlation)
+    return correlation
 
-class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
-    def __init__(self,*args, **kwargs):
-        super(MyTransformer, self).__init__(*args, **kwargs)
-        self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
-        self.loss_fn = CircleLoss(m=0.25, gamma=64)
+class MyTransformer(TransformerModel, with_pl=True):
+    def __init__(self,*args,**kwargs):
+        super(MyTransformer, self).__init__(*args,**kwargs)
+        self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
+        self.metric_product = ArcMarginProduct(512,self.config.num_labels,s=30.0, m=0.50, easy_margin=False)
+
+        loss_type = 'focal_loss'
+        if loss_type == 'focal_loss':
+            self.loss_fn = FocalLoss(gamma=2)
+        else:
+            self.loss_fn = torch.nn.CrossEntropyLoss()
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
-            (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
+            (self.feat_head, self.config.task_specific_params['learning_rate_for_task']),
+            (self.metric_product, self.config.task_specific_params['learning_rate_for_task']),
+            (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
     def compute_loss(self, *args,**batch) -> tuple:
-        
-        labels: torch.Tensor = batch.pop('labels', None)
+        labels: torch.Tensor = batch.pop('labels',None)
         outputs = self.model(*args,**batch)
         logits = self.feat_head(outputs[0][:, 0, :])
         # logits = torch.tan(logits)
         # logits = F.normalize(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)
-            loss = self.loss_fn(F.normalize(logits), labels)
-            outputs = (loss, logits, labels)
+            metric_logits = self.metric_product(logits, labels)
+            loss = self.loss_fn(metric_logits, labels)
+            outputs = (loss.mean(), logits, labels)
         else:
             outputs = (logits,)
         return outputs
-
-
-    def forward(self,*args, **batch):
-        return self.compute_loss(*args,**batch)
-
 
 
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
@@ -300,12 +291,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         a_data = [_[0] for _ in pos_data + neg_data]
         b_data = [_[1] for _ in pos_data + neg_data]
         labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
-
         t_data = a_data + b_data
-
         eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-
-
         vecs = []
         for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
             for k in batch:
@@ -320,7 +307,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         b_vecs = np.stack(vecs[len(a_data):],axis=0)
 
         corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
-
         f1 = corrcoef
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
@@ -330,13 +316,13 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             trainer.save_checkpoint(self.weight_file)
 
 
-
-if __name__ == '__main__':
+if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(every_n_train_steps=10000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="corrcoef", every_n_epochs=1)
     trainer = Trainer(
+        log_every_n_steps=20,
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
@@ -349,10 +335,8 @@ if __name__ == '__main__':
         num_sanity_val_steps=0,
         strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
-
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
+    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,data_args)
 
     token_fn_args_dict = {
         'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
@@ -384,18 +368,19 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True)
+
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
+    
+
+    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
 
     if train_datasets is not None:
-        trainer.fit(model,train_dataloaders=train_datasets)
-
+        trainer.fit(model, train_dataloaders=train_datasets)
     else:
-
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
         test_datasets = dataHelper.load_dataset(dataHelper.test_files)
         if eval_datasets is not None:
@@ -404,40 +389,8 @@ if __name__ == '__main__':
         if test_datasets is not None:
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
-
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets, ckpt_path='./best.pt')
-
-
-        is_convert_onnx = True
-        #是否转换模型
-        if is_convert_onnx:
-            input_sample = (
-                torch.ones(size=(1, 128), dtype=torch.int32),
-                torch.ones(size=(1, 128), dtype=torch.int32),
-            )
-            model.eval()
-            model.to('cuda')
-            input_names = ["input_ids", "attention_mask"]
-            out_names = ["pred_ids"]
-
-            model = MyTransformer.load_from_checkpoint('./best.pt',config=config, model_args=model_args, training_args=training_args)
-            model.to_onnx('./best.onnx',
-                          input_sample=input_sample,
-                          verbose=True,
-                          opset_version=10,
-                          do_constant_folding=True,
-                          input_names=input_names,
-                          output_names=out_names,
-                          dynamic_axes={"input_ids": [0, 1],
-                                        "attention_mask": [0, 1],
-                                        "pred_ids": [0, 1]
-                                        }
-                          )
-
-
-
-
+            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')

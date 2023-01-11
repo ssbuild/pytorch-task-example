@@ -16,6 +16,8 @@ from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
+from scipy.stats import stats
+from sklearn.metrics.pairwise import paired_distances
 from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
@@ -134,18 +136,11 @@ class NN_DataHelper(DataHelper):
 
 
 
-def transform_and_normalize(vecs, kernel=None, bias=None):
-    """应用变换，然后标准化
-    """
-    if not (kernel is None or bias is None):
-        vecs = (vecs + bias).dot(kernel)
-    norms = (vecs**2).sum(axis=1, keepdims=True)**0.5
-    return vecs / np.clip(norms, 1e-8, np.inf)
-
-def compute_corrcoef(x, y):
-    """Spearman相关系数
-    """
-    return scipy.stats.spearmanr(x, y).correlation
+def evaluate_sample(a_vecs,b_vecs,labels):
+    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    correlation,_  = stats.spearmanr(labels,sims)
+    print('*' * 30,'spearman ', correlation)
+    return correlation
 
 class MyTransformer(TransformerModel, with_pl=True):
     def __init__(self,*args,**kwargs):
@@ -220,12 +215,10 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         b_vecs = np.stack(b_vecs, axis=0)
         labels = np.stack(labels, axis=0)
 
-        a_vecs = transform_and_normalize(a_vecs)
-        b_vecs = transform_and_normalize(b_vecs)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels, sims)
-        f1 = corrcoef
 
+        corrcoef = evaluate_sample(a_vecs, b_vecs,labels)
+
+        f1 = corrcoef
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
