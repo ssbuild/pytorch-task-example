@@ -151,10 +151,8 @@ def generate_pair_example(all_example_dict: dict):
 
     for pos_label in all_keys:
         examples = all_example_dict[pos_label]
-
         if len(examples) == 0:
             continue
-
         num_size = int(min(np.random.randint(300,1000), int(len(examples) * 0.5)))
         if num_size < 2:
             continue
@@ -176,10 +174,10 @@ def generate_pair_example(all_example_dict: dict):
         d_list = all_example_dict[k]
         for d in d_list:
             flat_examples.append((k,d))
-
+    print('construct neg from {} flat_examples'.format(len(flat_examples)))
     idx_list = list(range(len(flat_examples)))
     np.random.shuffle(idx_list)
-    while len(idx_list) > 1:
+    while len(idx_list) >= 2:
         flag = False
         k1,e1 = flat_examples[idx_list.pop(0)]
         for i in idx_list[1:]:
@@ -190,6 +188,7 @@ def generate_pair_example(all_example_dict: dict):
                 if len(all_example_neg) > len(all_example_pos) * 10:
                     flag = True
                     break
+                break
         if flag:
             break
     print('pos num',len(all_example_pos),'neg num',len(all_example_neg) )

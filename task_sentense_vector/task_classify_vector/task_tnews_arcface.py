@@ -9,14 +9,12 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.circle_loss import CircleLoss
+from deep_training.nlp.losses.focal_loss import FocalLoss
+from deep_training.nlp.losses.loss_arcface import ArcMarginProduct
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch import nn
-from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
@@ -36,10 +34,10 @@ train_info_args = {
     'label_file': '/data/nlp/nlp_train_data/clue/tnews/labels.json',
     'learning_rate': 5e-5,
     'max_epochs': 30,
-    'train_batch_size': 64,
-    'test_batch_size': 32,
+    'train_batch_size': 80,
+    'test_batch_size': 40,
     'adam_epsilon': 1e-8,
-    'gradient_accumulation_steps': 10,
+    'gradient_accumulation_steps': 1,
     'max_grad_norm': 1.0,
     'weight_decay': 0,
     'warmup_steps': 0,
@@ -140,84 +138,86 @@ def compute_corrcoef(x, y):
     """
     return scipy.stats.spearmanr(x, y).correlation
 
-def choise_samples_from_classvectors(vec_maps: dict):
-    num_pos,num_neg = 0, 0
-    a_vecs_pos,b_vecs_pos,a_vecs_negs,b_vecs_negs = [],[],[],[]
-    for k in vec_maps:
-        obj_list = vec_maps[k]
-        if len(obj_list) > 2:
-            val = [obj_list[ids] for ids in np.random.choice(list(range(len(obj_list))),size= min(1000, len(obj_list)),replace=False)]
-            for j in range(0, len(val) // 2, 2):
-                num_pos += 1
-                a_vecs_pos.append(val[j])
-                b_vecs_pos.append(val[j + 1])
-    vec_all = []
-    for k,vec in vec_maps.items():
-        vec_all.append((k,vec))
-
-    shuffle_idx = np.arange(0,len(vec_all))
-    np.random.shuffle(shuffle_idx)
 
 
-    for i in range(0,shuffle_idx,2):
-        vec1 = vec_all[i]
-        vec2 = vec_all[i + 1]
-        if vec1[0] == vec2[0]:
+def generate_pair_example(all_example_dict: dict):
+    all_example_dict = copy.copy(all_example_dict)
+
+    all_example_pos,all_example_neg = [],[]
+    all_keys = list(all_example_dict.keys())
+    np.random.shuffle(all_keys)
+
+    for pos_label in all_keys:
+        examples = all_example_dict[pos_label]
+        if len(examples) == 0:
             continue
-        num_neg += 1
+        num_size = int(min(np.random.randint(300,1000), int(len(examples) * 0.5)))
+        if num_size < 2:
+            continue
+        id_list = list(range(len(examples)))
+        ids = np.random.choice(id_list, replace=False, size=num_size)
+        ids = sorted(ids,reverse=True)
+        for i1,i2 in zip(ids[::2],ids[1::2]):
+            v1 = examples[i1]
+            v2 = examples[i2]
+            examples.pop(i1)
+            examples.pop(i2)
+            all_example_pos.append((v1, v2))
+        # 去除空标签数据
+        if len(examples) <= 1:
+            all_keys.remove(pos_label)
 
-        if num_neg > num_pos * 2:
+    flat_examples = []
+    for k in all_keys:
+        d_list = all_example_dict[k]
+        for d in d_list:
+            flat_examples.append((k,d))
+    print('construct neg from {} flat_examples'.format(len(flat_examples)))
+    idx_list = list(range(len(flat_examples)))
+    np.random.shuffle(idx_list)
+    while len(idx_list) >= 2:
+        flag = False
+        k1,e1 = flat_examples[idx_list.pop(0)]
+        for i in idx_list[1:]:
+            k2,e2 = flat_examples[i]
+            if k1 != k2:
+                all_example_neg.append((e1,e2))
+                idx_list.remove(i)
+                if len(all_example_neg) > len(all_example_pos) * 10:
+                    flag = True
+                    break
+                break
+        if flag:
             break
+    print('pos num',len(all_example_pos),'neg num',len(all_example_neg) )
+    return all_example_pos,all_example_neg
 
-        a_vecs_negs.append(vec1[1])
-        b_vecs_negs.append(vec2[1])
 
-    print('pos sample', num_pos, ' neg sample ',num_neg)
-
-    a_vecs_pos = np.stack(a_vecs_pos, axis=0)
-    b_vecs_pos = np.stack(b_vecs_pos, axis=0)
-
-    a_vecs_negs = np.stack(a_vecs_negs, axis=0)
-    b_vecs_negs = np.stack(b_vecs_negs, axis=0)
-
-    return a_vecs_pos, b_vecs_pos, a_vecs_negs,b_vecs_negs
-
-def evaluate_sample(vec_maps):
-    a_vecs_pos, b_vecs_pos, a_vecs_negs, b_vecs_negs = choise_samples_from_classvectors(vec_maps)
-    pos_labels = np.ones(shape=(len(a_vecs_pos)), dtype=np.int32)
-    neg_labels = np.zeros(shape=(len(a_vecs_negs)), dtype=np.int32)
-
-    a_vecs = transform_and_normalize(a_vecs_pos)
-    b_vecs = transform_and_normalize(b_vecs_pos)
+def evaluate_sample(a_vecs,b_vecs,labels):
+    a_vecs = transform_and_normalize(a_vecs)
+    b_vecs = transform_and_normalize(b_vecs)
     sims = (a_vecs * b_vecs).sum(axis=1)
-    corrcoef1 = compute_corrcoef(pos_labels, sims)
-
-    a_vecs = transform_and_normalize(a_vecs_negs)
-    b_vecs = transform_and_normalize(b_vecs_negs)
-    sims = (a_vecs * b_vecs).sum(axis=1)
-    corrcoef2 = compute_corrcoef(neg_labels, sims)
-
-    a_vecs = transform_and_normalize(np.concatenate([a_vecs_pos, a_vecs_negs], axis=0))
-    b_vecs = transform_and_normalize(np.concatenate([b_vecs_pos, b_vecs_negs], axis=0))
-    sims = (a_vecs * b_vecs).sum(axis=1)
-    corrcoef = compute_corrcoef(np.concatenate([pos_labels, neg_labels], axis=0), sims)
-
+    corrcoef = compute_corrcoef(labels,sims)
     print('*' * 30)
-    print('pos spearman ', corrcoef1)
-    print('neg spearman ', corrcoef2)
-    print('total spearman ', corrcoef)
+    print('spearman ', corrcoef)
     return corrcoef
 
 class MyTransformer(TransformerModel, with_pl=True):
     def __init__(self,*args,**kwargs):
         super(MyTransformer, self).__init__(*args,**kwargs)
         self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
-        self.loss_fn = CircleLoss(m=0.25, gamma=64)
+        self.metric_product = ArcMarginProduct(512,self.config.num_labels,s=30.0, m=0.50, easy_margin=False)
 
+        loss_type = 'focal_loss'
+        if loss_type == 'focal_loss':
+            self.loss_fn = FocalLoss(gamma=2)
+        else:
+            self.loss_fn = torch.nn.CrossEntropyLoss()
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task']),
+            (self.metric_product, self.config.task_specific_params['learning_rate_for_task']),
             (self.loss_fn, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
@@ -229,8 +229,9 @@ class MyTransformer(TransformerModel, with_pl=True):
         # logits = F.normalize(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)
-            loss = self.loss_fn(F.normalize(logits),labels)
-            outputs = (loss,logits,labels)
+            metric_logits = self.metric_product(logits, labels)
+            loss = self.loss_fn(metric_logits, labels)
+            outputs = (loss.mean(), logits, labels)
         else:
             outputs = (logits,)
         return outputs
@@ -250,25 +251,48 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
-        vec_maps = {}
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+        if not hasattr(self,'pos_data'):
+            self.pos_data = None
+            self.neg_data = None
+
+        if self.pos_data is None:
+            eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
+            all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
+            map_data = {}
+            for d in all_data:
+                label = np.squeeze(d['labels']).tolist()
+                if label not in map_data:
+                    map_data[label] = []
+                map_data[label].append(d)
+            self.pos_data,self.neg_data = generate_pair_example(map_data)
+
+        pos_data = self.pos_data
+        neg_data = self.neg_data
+        a_data = [_[0] for _ in pos_data + neg_data]
+        b_data = [_[1] for _ in pos_data + neg_data]
+        labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
+
+        t_data = a_data + b_data
+        from fastdatasets.torch_dataset import Dataset as torch_Dataset
+        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+
+        vecs = []
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data),desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch,i)
-            b_logits, b_labels = o['outputs']
+            b_logits, _ = o['outputs']
             for j in range(len(b_logits)):
                 logit = np.asarray(b_logits[j], dtype=np.float32)
-                label = np.asarray(b_labels[j], dtype=np.int32)
+                vecs.append(logit)
 
-                label = label.squeeze().tolist()
-                if label not in vec_maps:
-                    vec_maps[label] = []
-                vec_maps[label].append(logit)
+        a_vecs = np.stack(vecs[:len(a_data)],axis=0)
+        b_vecs = np.stack(vecs[len(a_data):],axis=0)
 
-        corrcoef = evaluate_sample(vec_maps)
+        corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
+
         f1 = corrcoef
 
         best_f1 = self.best.get('f1',-np.inf)
