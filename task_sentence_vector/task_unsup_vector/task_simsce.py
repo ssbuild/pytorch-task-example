@@ -178,13 +178,16 @@ class MyTransformer(TransformerModel, with_pl=True):
 
     def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels',None)
-        if self.training:
-            batch = {k: torch.repeat_interleave(v, 2, dim=1) for k, v in batch.items()}
+
         if labels is not None:
             inputs = {}
             for k in list(batch.keys()):
                 if k.endswith('2'):
-                    inputs[k.replace('2','')] = batch.pop(k)
+                    inputs[k.replace('2', '')] = batch.pop(k)
+
+        if self.training:
+            batch = {k: torch.repeat_interleave(v, 2, dim=0) for k, v in batch.items()}
+
         simcse_logits = self.forward_for_hidden(*args,**batch)
         if self.training:
             loss = compute_simcse_loss(simcse_logits)
