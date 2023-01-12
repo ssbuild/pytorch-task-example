@@ -9,7 +9,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.contrast import compute_simcse_loss
+from deep_training.nlp.losses.contrast import SimcseLoss
 from deep_training.nlp.losses.loss_cosent import cat_even_odd_reorder
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
@@ -48,9 +48,9 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 512,
-    'eval_max_seq_length': 512,
-    'test_max_seq_length': 512,
+    'train_max_seq_length': 128,
+    'eval_max_seq_length': 128,
+    'test_max_seq_length': 128,
 
 }
 
@@ -108,8 +108,9 @@ class NN_DataHelper(DataHelper):
                 else:
                     for k,v in d.items():
                         ds[k+'2'] = v
-            labels = np.asarray(label2id[label_str], dtype=np.int32)
-            ds['labels'] = labels
+            if label_str is not None:
+                labels = np.asarray(label2id[label_str], dtype=np.int32)
+                ds['labels'] = labels
             return ds
 
 
@@ -154,7 +155,6 @@ class NN_DataHelper(DataHelper):
             o[k] = torch.stack(o[k])
 
         max_len = torch.max(o.pop('seqlen'))
-
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'seqlen2' in o:
@@ -171,6 +171,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         self.pooling = pooling
         config = self.config
         self.sim_head = nn.Linear(config.hidden_size, 512, bias=False)
+        self.loss_fn = SimcseLoss()
 
 
     def get_model_lr(self):
@@ -212,10 +213,11 @@ class MyTransformer(TransformerModel, with_pl=True):
         if self.training:
             batch2 = {k: torch.clone(v) for k, v in batch.items()}
             simcse_logits2 = self.forward_for_hidden(*args, **batch2)
-            loss = compute_simcse_loss(cat_even_odd_reorder(simcse_logits, simcse_logits2))
+            loss = self.loss_fn (cat_even_odd_reorder(simcse_logits,simcse_logits2))
             outputs = (loss,)
         elif labels is not None:
             simcse_logits2 = self.forward_for_hidden(*args, **inputs)
+            labels = torch.squeeze(labels,dim=-1)
             outputs = (None,simcse_logits, simcse_logits2,labels)
         else:
             outputs = (simcse_logits,)
@@ -263,7 +265,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         a_vecs = np.stack(a_vecs, axis=0)
         b_vecs = np.stack(b_vecs, axis=0)
         labels = np.stack(labels, axis=0)
-        labels = np.squeeze(labels,axis=-1)
 
         corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
         f1 = corrcoef

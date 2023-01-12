@@ -30,12 +30,16 @@ train_info_args = {
     'tokenizer_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
-    'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
-    'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
-    'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
+    'do_eval': True,
+    # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
+    # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
+    # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
+    'train_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
+    'test_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
     'optimizer': 'adamw',
     'learning_rate':5e-5,
-    'max_epochs':3,
+    'max_epochs': 3,
     'train_batch_size':64,
     'test_batch_size':2,
     'adam_epsilon':1e-8,
@@ -44,15 +48,14 @@ train_info_args = {
     'weight_decay':0,
     'warmup_steps':0,
     'output_dir':'./output',
-    'max_seq_length':140
+    'max_seq_length': 140
 }
 #cls , pooler , last-avg , first-last-avg , reduce
 pooling = 'cls'
 
-
 def pad_to_seqlength(sentence,tokenizer,max_seq_length):
     tokenizer: BertTokenizer
-    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
+    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, return_token_type_ids=False)
     arrs = [o['input_ids'],o['attention_mask']]
     seqlen = np.asarray(len(arrs[0]),dtype=np.int64)
     input_ids,attention_mask = seq_pading(arrs,max_seq_length=max_seq_length,pad_val=tokenizer.pad_token_id)
@@ -69,13 +72,16 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
         sentence1, sentence2, label_str = data
-        labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
+
         d1 = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
         d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
         d = d1
         for k, v in d2.items():
             d[k + '2'] = v
-        d['labels'] = labels
+
+        if label_str is not None:
+            labels = np.asarray(label2id[label_str], dtype=np.int64)
+            d['labels'] = labels
         return d
 
     #读取标签
@@ -91,11 +97,17 @@ class NN_DataHelper(DataHelper):
         for filename in files:
             with open(filename, mode='r', encoding='utf-8') as f:
                 lines = f.readlines()
-                for line in lines:
-                    jd = json.loads(line)
-                    if not jd:
-                        continue
-                    D.append((jd['sentence1'],jd['sentence2'], jd.get('label',None)))
+                if filename.endswith('.json'):
+                    for line in lines:
+                        jd = json.loads(line)
+                        if not jd:
+                            continue
+                        D.append((jd['sentence1'],jd['sentence2'], jd.get('label',None)))
+                else:
+                    for line in lines:
+                        line = line.replace('\r\n','').replace('\n','')
+                        s1,s2,l = line.split('\t',2)
+                        D.append((s1,s2,l))
         return D
 
 
@@ -172,10 +184,10 @@ class MyTransformer(TransformerModel, with_pl=True):
                     inputs[k.replace('2', '')] = batch.pop(k)
         logits1 = self.forward_for_hidden(*args,**batch)
         if labels is not None:
-            labels = labels.float()
+            labels = torch.squeeze(labels,dim=-1).float()
             logits2 = self.forward_for_hidden(*args, **inputs)
             loss = self.loss_fn([logits1, logits2], labels)
-            outputs = (loss,logits1,logits2)
+            outputs = (loss,logits1,logits2,labels)
         else:
             outputs = (logits1, )
         return outputs
@@ -238,7 +250,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments,DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="loss", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

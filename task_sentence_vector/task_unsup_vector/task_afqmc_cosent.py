@@ -74,13 +74,16 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
         sentence1, sentence2, label_str = data
-        labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
+
         d1 = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
         d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
         d = d1
         for k, v in d2.items():
             d[k + '2'] = v
-        d['labels'] = labels
+
+        if label_str is not None:
+            labels = np.asarray(label2id[label_str], dtype=np.int64)
+            d['labels'] = labels
         return d
 
     #读取标签
