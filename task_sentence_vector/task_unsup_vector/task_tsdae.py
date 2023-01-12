@@ -37,8 +37,8 @@ train_info_args = {
     'max_steps': 100000,
     'optimizer': 'adamw',
     'learning_rate':5e-5,
-    'train_batch_size': 10,
-    'eval_batch_size': 4,
+    'train_batch_size': 20,
+    'eval_batch_size': 20,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -51,7 +51,7 @@ train_info_args = {
     'test_max_seq_length': 128,
     ##### tsdae 模型参数
     'vector_size': 512,
-    'num_encoder_layer': 6,
+    'num_encoder_layer': 12,
     'num_decoder_layer': 6,
     'decoder_model_type': 'bert',
     'decoder_model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -61,7 +61,7 @@ train_info_args = {
 
 def pad_to_seqlength(sentence,tokenizer,max_seq_length):
     tokenizer: BertTokenizer
-    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
+    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False )
     arrs = [o['input_ids'],o['attention_mask']]
     seqlen = np.asarray(len(arrs[0]),dtype=np.int64)
     input_ids,attention_mask = seq_pading(arrs,max_seq_length=max_seq_length,pad_val=tokenizer.pad_token_id)
@@ -77,8 +77,10 @@ def add_token_noise(tokens, del_ratio=0.6):
     if n < 5:
         return tokens
     keep_or_not = np.random.rand(n) > del_ratio
+    keep_or_not[0] = True
+    keep_or_not[-1] = True
     if sum(keep_or_not) == 0:
-        keep_or_not[np.random.choice(n)] = True # guarantee that at least one word remains
+        keep_or_not[ np.random.randint(1,n-1,dtype=np.int32)] = True # guarantee that at least one word remains
     return [tokens[i] for i,bkeep in enumerate(keep_or_not) if bkeep]
 
 class NN_DataHelper(DataHelper):
@@ -91,7 +93,7 @@ class NN_DataHelper(DataHelper):
         if mode == 'train':
             d = []
             for sentence in [sentence1,sentence2]:
-                tokens_ids = tokenizer.convert_tokens_to_ids(add_token_noise(tokenizer.tokenize(sentence)))
+                tokens_ids = tokenizer.convert_tokens_to_ids(add_token_noise(tokenizer.tokenize(sentence,truncation=True, add_special_tokens=True,return_token_type_ids=False)))
                 seqlen = len(tokens_ids)
                 d.append({
                     'input_ids': seq_padding(tokens_ids, max_seq_length=max_seq_length, dtype=np.int32),

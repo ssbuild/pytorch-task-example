@@ -55,7 +55,7 @@ train_info_args = {
 
 def pad_to_seqlength(sentence,tokenizer,max_seq_length):
     tokenizer: BertTokenizer
-    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
+    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, return_token_type_ids=False)
     arrs = [o['input_ids'],o['attention_mask']]
     seqlen = np.asarray(len(arrs[0]),dtype=np.int64)
     input_ids,attention_mask = seq_pading(arrs,max_seq_length=max_seq_length,pad_val=tokenizer.pad_token_id)

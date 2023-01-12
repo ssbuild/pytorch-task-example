@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import random
 import typing
 
@@ -10,21 +11,31 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.contrast import compute_simcse_loss
 from deep_training.nlp.models.transformer import TransformerModel
+from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
+from scipy import stats
+from sklearn.metrics.pairwise import paired_distances
 from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
+from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
     'devices':  1,
-    'data_backend': 'memory_raw',
+    'data_backend': 'record',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-    'do_train': True,
-    'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
+     'do_train': True,
+    'do_eval': True,
+     # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
+    # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
+    # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
     'max_steps': 100000,
     'optimizer': 'adamw',
     'learning_rate':5e-5,
@@ -49,48 +60,81 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
 
-        sentence = data
+        sentence1, sentence2, label_str = data
 
-        tokenizer: BertTokenizer
-        o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
-        for k in o:
-            o[k] = np.asarray(o[k],dtype=np.int32)
-        seqlen = np.asarray(len(o['input_ids']), dtype=np.int64)
-        pad_len = max_seq_length - seqlen
-        if pad_len > 0:
-            pad_val = tokenizer.pad_token_id
-            o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
-            o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
-            o['token_type_ids'] = np.pad(o['token_type_ids'], pad_width=(0, pad_len), constant_values=(0, 0))
-        d = {
-            'input_ids': o['input_ids'],
-            'attention_mask': o['attention_mask'],
-            'token_type_ids': o['token_type_ids'],
-            'seqlen': seqlen
-        }
-        return d
+        if mode == 'train':
+            ds = []
+            for sentence in [sentence1, sentence2]:
+                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
+                for k in o:
+                    o[k] = np.asarray(o[k],dtype=np.int32)
+                seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
+                pad_len = max_seq_length - seqlen
+                if pad_len > 0:
+                    pad_val = tokenizer.pad_token_id
+                    o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
+                    o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
+                d = {
+                    'input_ids': o['input_ids'],
+                    'attention_mask': o['attention_mask'],
+                    'seqlen': seqlen
+                }
+                ds.append(d)
+            return ds
+        #验证
+        else:
+            ds = {}
+            for sentence in [sentence1, sentence2]:
+                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
+                for k in o:
+                    o[k] = np.asarray(o[k],dtype=np.int32)
+                seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
+                pad_len = max_seq_length - seqlen
+                if pad_len > 0:
+                    pad_val = tokenizer.pad_token_id
+                    o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
+                    o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
+                d = {
+                    'input_ids': o['input_ids'],
+                    'attention_mask': o['attention_mask'],
+                    'seqlen': seqlen
+                }
+                if 'input_ids' not in ds:
+                    ds = d
+                else:
+                    for k,v in d.items():
+                        ds[k+'2'] = v
+            labels = np.asarray(label2id[label_str], dtype=np.int32)
+            ds['labels'] = labels
+            return ds
+
+
+    # 读取标签
+    def on_get_labels(self, files: typing.List[str]):
+        D = ['0', '1']
+        label2id = {label: i for i, label in enumerate(D)}
+        id2label = {i: label for i, label in enumerate(D)}
+        return label2id, id2label
+
+        # 读取文件
 
     def on_get_corpus(self, files: typing.List, mode: str):
         D = []
-        line_no = 0
-        for input_file in files:
-            with open(input_file, 'r', encoding='utf-8') as f:
+        for filename in files:
+            with open(filename, mode='r', encoding='utf-8') as f:
                 lines = f.readlines()
-                for line in lines:
-                    jd = json.loads(line)
-                    if not jd:
-                        continue
-                    text = jd['content']
-                    D.append(text)
-                    line_no += 1
-
-                    if line_no > 1000:
-                        break
-
-                    if line_no % 10000 == 0:
-                        print('read_line', line_no)
-                        print(D[-1])
-        return D[0:100] if mode == 'train' else D[:10]
+                if filename.endswith('.json'):
+                    for line in lines:
+                        jd = json.loads(line)
+                        if not jd:
+                            continue
+                        D.append((jd['sentence1'], jd['sentence2'], jd.get('label', None)))
+                else:
+                    for line in lines:
+                        line = line.replace('\r\n', '').replace('\n', '')
+                        s1, s2, l = line.split('\t', 2)
+                        D.append((s1, s2, l))
+        return D
 
     @staticmethod
     def collate_fn(batch):
@@ -109,8 +153,10 @@ class NN_DataHelper(DataHelper):
 
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
-        if 'token_type_ids' in o:
-            o['token_type_ids'] = o['token_type_ids'][:, :max_len]
+        if 'seqlen2' in o:
+            max_len = torch.max(o.pop('seqlen2'))
+            o['input_ids2'] = o['input_ids2'][:, :max_len]
+            o['attention_mask2'] = o['attention_mask2'][:, :max_len]
         return o
 
 
@@ -125,27 +171,89 @@ class MyTransformer(TransformerModel, with_pl=True):
             (self.sim_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-
+    def forward_for_hidden(self,*args, **batch):
+        outputs = self.model(*args, **batch)
+        simcse_logits = self.sim_head(outputs[1])
+        return simcse_logits
 
     def compute_loss(self, *args,**batch) -> tuple:
+        labels: torch.Tensor = batch.pop('labels',None)
         if self.training:
             batch = {k: torch.repeat_interleave(v, 2, dim=1) for k, v in batch.items()}
-        outputs = self.model(*args,**batch)
-        simcse_logits = self.sim_head(outputs[1])
+        if labels is not None:
+            inputs = {}
+            for k in list(batch.keys()):
+                if k.endswith('2'):
+                    inputs[k.replace('2','')] = batch.pop(k)
+        simcse_logits = self.forward_for_hidden(*args,**batch)
         if self.training:
             loss = compute_simcse_loss(simcse_logits)
             outputs = (loss, simcse_logits)
+        elif labels is not None:
+            simcse_logits2 = self.forward_for_hidden(*args, **inputs)
+            outputs = (None,simcse_logits, simcse_logits2)
         else:
             outputs = (simcse_logits,)
         return outputs
 
+def evaluate_sample(a_vecs,b_vecs,labels):
+    print('*' * 30,'evaluating....',len(a_vecs))
+    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
+    print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
+    print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
+    correlation,_  = stats.spearmanr(labels,sims)
+    print('spearman ', correlation)
+    return correlation
 
+class MySimpleModelCheckpoint(SimpleModelCheckpoint):
+    def __init__(self, *args, **kwargs):
+        super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
+        self.weight_file = './best.pt'
+
+    def on_save_model(
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        pl_module: MyTransformer
+
+        # 当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+        a_vecs, b_vecs, labels = [], [], []
+        for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
+            for k in batch:
+                batch[k] = batch[k].to(device)
+            o = pl_module.validation_step(batch, i)
+            a_logits, b_logits, b_labels = o['outputs']
+            for j in range(len(b_logits)):
+                logit1 = np.asarray(a_logits[j], dtype=np.float32)
+                logit2 = np.asarray(b_logits[j], dtype=np.float32)
+                label = np.asarray(b_labels[j], dtype=np.int32)
+
+                a_vecs.append(logit1)
+                b_vecs.append(logit2)
+                labels.append(label)
+
+        a_vecs = np.stack(a_vecs, axis=0)
+        b_vecs = np.stack(b_vecs, axis=0)
+        labels = np.stack(labels, axis=0)
+        labels = np.squeeze(labels,axis=-1)
+
+        corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
+        f1 = corrcoef
+        best_f1 = self.best.get('f1',-np.inf)
+        print('current', f1, 'best', best_f1)
+        if f1 >= best_f1:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
 
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=2000)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -198,7 +306,8 @@ if __name__ == '__main__':
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
-                                             with_record_iterable_dataset=True)
+                                             with_record_iterable_dataset=False,
+                                             with_load_memory=True)
 
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
