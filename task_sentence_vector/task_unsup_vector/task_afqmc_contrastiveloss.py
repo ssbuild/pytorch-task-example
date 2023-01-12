@@ -46,6 +46,8 @@ train_info_args = {
     'output_dir':'./output',
     'max_seq_length':140
 }
+#cls , pooler , last-avg , first-last-avg , reduce
+pooling = 'cls'
 
 
 def pad_to_seqlength(sentence,tokenizer,max_seq_length):
@@ -71,7 +73,7 @@ class NN_DataHelper(DataHelper):
         d1 = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
         d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
         d = d1
-        for k, v in d2:
+        for k, v in d2.items():
             d[k + '2'] = v
         d['labels'] = labels
         return d
@@ -124,7 +126,9 @@ class NN_DataHelper(DataHelper):
 
 class MyTransformer(TransformerModel, with_pl=True):
     def __init__(self,*args,**kwargs):
+        pooling = kwargs.pop('pooling','cls')
         super(MyTransformer, self).__init__(*args,**kwargs)
+        self.pooling = pooling
         config = self.config
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
         self.loss_fn = ContrastiveLoss(size_average=False,margin=0.5)
@@ -134,17 +138,42 @@ class MyTransformer(TransformerModel, with_pl=True):
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
+    def forward_for_hidden(self, *args, **batch):
+        outputs = self.model(*args, **batch, output_hidden_states=True, )
+        if self.pooling == 'cls':
+            simcse_logits = outputs[0][:, 0]
+        elif self.pooling == 'pooler':
+            simcse_logits = outputs[1]
+        elif self.pooling == 'last-avg':
+            last = outputs[0].transpose(1, 2)  # [batch, 768, seqlen]
+            simcse_logits = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
+        elif self.pooling == 'first-last-avg':
+            first = outputs[2][1].transpose(1, 2)  # [batch, 768, seqlen]
+            last = outputs[2][-1].transpose(1, 2)  # [batch, 768, seqlen]
+            first_avg = torch.avg_pool1d(first, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
+            last_avg = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
+            avg = torch.cat((first_avg.unsqueeze(1), last_avg.unsqueeze(1)), dim=1)  # [batch, 2, 768]
+            simcse_logits = torch.avg_pool1d(avg.transpose(1, 2), kernel_size=2).squeeze(-1)  # [batch, 768]
+        elif self.pooling == 'reduce':
+            simcse_logits = self.sim_head(outputs[1])
+            simcse_logits = torch.tanh(simcse_logits)
+        else:
+            raise ValueError('not support pooling', self.pooling)
+        return simcse_logits
+
+
+
     def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels',None)
         if labels is not None:
-            batch2 = {
-                "input_ids": batch.pop('input_ids2'),
-                "attention_mask": batch.pop('attention_mask2'),
-            }
-        logits1 = self.feat_head(self.model(*args,**batch)[0][:, 0, :])
+            inputs = {}
+            for k in list(batch.keys()):
+                if k.endswith('2'):
+                    inputs[k.replace('2', '')] = batch.pop(k)
+        logits1 = self.forward_for_hidden(*args,**batch)
         if labels is not None:
             labels = labels.float()
-            logits2 = self.feat_head(self.model(**batch2)[0][:, 0, :])
+            logits2 = self.forward_for_hidden(*args, **inputs)
             loss = self.loss_fn([logits1, logits2], labels)
             outputs = (loss,logits1,logits2)
         else:
@@ -265,7 +294,7 @@ if __name__== '__main__':
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
 
-    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(pooling=pooling,config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)

@@ -50,6 +50,7 @@ train_info_args = {
     'eval_max_seq_length': 128,
     'test_max_seq_length': 128,
     ##### tsdae 模型参数
+    'pooling': 'cls', # one of [cls,reduce]
     'vector_size': 512,
     'num_encoder_layer': 12,
     'num_decoder_layer': 6,

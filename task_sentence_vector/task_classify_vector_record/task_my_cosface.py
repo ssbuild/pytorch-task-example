@@ -224,8 +224,8 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
     def compute_loss(self, *args, **batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels', None)
         outputs = self.model(*args, **batch)
-        logits = self.feat_head(outputs[0][:, 0, :])
-        # logits = torch.tan(logits)
+        logits = self.feat_head(outputs[0][:, 0])
+        logits = torch.tan(logits)
         # logits = F.normalize(logits)
         if labels is not None:
             labels = torch.squeeze(labels, dim=1)

@@ -280,7 +280,8 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
 
     def forward_hidden(self,*args,**batch):
         outputs = self.model(*args, **batch)
-        logits = self.feat_head(outputs[0][:, 0, :])
+        logits = self.feat_head(outputs[0][:, 0])
+        logits = torch.tan(logits)
         return logits
 
     def compute_loss(self, *args,**batch) -> tuple:
