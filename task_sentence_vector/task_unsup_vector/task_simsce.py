@@ -256,7 +256,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=2000)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
