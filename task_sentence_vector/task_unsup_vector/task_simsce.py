@@ -191,7 +191,7 @@ class MyTransformer(TransformerModel, with_pl=True):
             outputs = (loss, simcse_logits)
         elif labels is not None:
             simcse_logits2 = self.forward_for_hidden(*args, **inputs)
-            outputs = (None,simcse_logits, simcse_logits2)
+            outputs = (None,simcse_logits, simcse_logits2,labels)
         else:
             outputs = (simcse_logits,)
         return outputs
@@ -314,6 +314,9 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
+    # 修改config的dropout系数
+    config.attention_probs_dropout_prob = 0.3
+    config.hidden_dropout_prob = 0.3
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
