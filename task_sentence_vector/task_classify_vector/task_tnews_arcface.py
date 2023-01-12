@@ -143,9 +143,7 @@ def generate_pair_example(all_example_dict: dict):
     num_all = 0
     for k, v in all_example_dict.items():
         num_all += len(v)
-
     pos_num_max = num_all // 2 // 5
-
     for pos_label in all_keys:
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
@@ -321,7 +319,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="corrcoef", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],

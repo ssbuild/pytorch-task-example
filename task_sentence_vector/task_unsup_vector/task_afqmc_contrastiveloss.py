@@ -23,28 +23,28 @@ from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-'devices':  1,
-'data_backend':'memory_raw',
-'model_type': 'bert',
-'model_name_or_path':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
-'tokenizer_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
-'config_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-'do_train': True,
-'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
-'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
-'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
-'optimizer': 'adamw',
-'learning_rate':5e-5,
-'max_epochs':3,
-'train_batch_size':64,
-'test_batch_size':2,
-'adam_epsilon':1e-8,
-'gradient_accumulation_steps':1,
-'max_grad_norm':1.0,
-'weight_decay':0,
-'warmup_steps':0,
-'output_dir':'./output',
-'max_seq_length':140
+    'devices':  1,
+    'data_backend':'record',
+    'model_type': 'bert',
+    'model_name_or_path':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'tokenizer_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'config_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
+    'do_train': True,
+    'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
+    'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
+    'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
+    'optimizer': 'adamw',
+    'learning_rate':5e-5,
+    'max_epochs':3,
+    'train_batch_size':64,
+    'test_batch_size':2,
+    'adam_epsilon':1e-8,
+    'gradient_accumulation_steps':1,
+    'max_grad_norm':1.0,
+    'weight_decay':0,
+    'warmup_steps':0,
+    'output_dir':'./output',
+    'max_seq_length':140
 }
 
 
@@ -54,28 +54,26 @@ def pad_to_seqlength(sentence,tokenizer,max_seq_length):
     arrs = [o['input_ids'],o['attention_mask']]
     seqlen = np.asarray(len(arrs[0]),dtype=np.int64)
     input_ids,attention_mask = seq_pading(arrs,max_seq_length=max_seq_length,pad_val=tokenizer.pad_token_id)
-    return input_ids,attention_mask,seqlen
+    d = {
+        'input_ids': input_ids,
+        'attention_mask': attention_mask,
+        'seqlen': seqlen
+    }
+    return d
 
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self,data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-
-        sentence1,sentence2,label_str = data
-        labels = np.asarray(1 - label2id[label_str] if label_str is not None else 0, dtype=np.int64)
-
-        input_ids, attention_mask,seqlen = pad_to_seqlength(sentence1,tokenizer,max_seq_length)
-        input_ids_2, attention_mask_2, seqlen_2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
-        d = {
-            'labels': labels,
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'seqlen': seqlen,
-            'input_ids_2': input_ids_2,
-            'attention_mask_2': attention_mask_2,
-            'seqlen_2': seqlen_2
-        }
+        sentence1, sentence2, label_str = data
+        labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
+        d1 = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
+        d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
+        d = d1
+        for k, v in d2:
+            d[k + '2'] = v
+        d['labels'] = labels
         return d
 
     #读取标签
@@ -117,11 +115,11 @@ class NN_DataHelper(DataHelper):
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
 
-        seqlen = o.pop('seqlen_2')
-        max_len = torch.max(seqlen)
-        o['input_ids_2'] = o['input_ids_2'][:, :max_len]
-        o['attention_mask_2'] = o['attention_mask_2'][:, :max_len]
-
+        if 'seqlen2' in o:
+            seqlen = o.pop('seqlen2')
+            max_len = torch.max(seqlen)
+            o['input_ids2'] = o['input_ids2'][:, :max_len]
+            o['attention_mask2'] = o['attention_mask2'][:, :max_len]
         return o
 
 class MyTransformer(TransformerModel, with_pl=True):
@@ -140,8 +138,8 @@ class MyTransformer(TransformerModel, with_pl=True):
         labels: torch.Tensor = batch.pop('labels',None)
         if labels is not None:
             batch2 = {
-                "input_ids": batch.pop('input_ids_2'),
-                "attention_mask": batch.pop('attention_mask_2'),
+                "input_ids": batch.pop('input_ids2'),
+                "attention_mask": batch.pop('attention_mask2'),
             }
         logits1 = self.feat_head(self.model(*args,**batch)[0][:, 0, :])
         if labels is not None:
@@ -258,7 +256,8 @@ if __name__== '__main__':
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
-                                             with_record_iterable_dataset=True)
+                                             with_record_iterable_dataset=False,
+                                             with_load_memory=True)
 
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,

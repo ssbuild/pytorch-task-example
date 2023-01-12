@@ -139,9 +139,7 @@ def generate_pair_example(all_example_dict: dict):
     num_all = 0
     for k, v in all_example_dict.items():
         num_all += len(v)
-
     pos_num_max = num_all // 2 // 5
-
     for pos_label in all_keys:
         examples = all_example_dict[pos_label]
         if len(examples) == 0:

@@ -25,7 +25,7 @@ from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
     'devices':  1,
-    'data_backend':'memory_raw',
+    'data_backend':'record',
     'model_type': 'bert',
     'model_name_or_path':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -59,28 +59,26 @@ def pad_to_seqlength(sentence,tokenizer,max_seq_length):
     arrs = [o['input_ids'],o['attention_mask']]
     seqlen = np.asarray(len(arrs[0]),dtype=np.int64)
     input_ids,attention_mask = seq_pading(arrs,max_seq_length=max_seq_length,pad_val=tokenizer.pad_token_id)
-    return input_ids,attention_mask,seqlen
+    d = {
+        'input_ids': input_ids,
+        'attention_mask': attention_mask,
+        'seqlen': seqlen
+    }
+    return d
 
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self,data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-
-        sentence1,sentence2,label_str = data
+        sentence1, sentence2, label_str = data
         labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
-
-        input_ids, attention_mask, seqlen = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
-        input_ids_2, attention_mask_2, seqlen_2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
-        d = {
-            'labels': labels,
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'seqlen': seqlen,
-            'input_ids_2': input_ids_2,
-            'attention_mask_2': attention_mask_2,
-            'seqlen_2': seqlen_2
-        }
+        d1 = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
+        d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
+        d = d1
+        for k, v in d2:
+            d[k + '2'] = v
+        d['labels'] = labels
         return d
 
     #读取标签
@@ -128,10 +126,11 @@ class NN_DataHelper(DataHelper):
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
 
-        seqlen = o.pop('seqlen_2')
-        max_len = torch.max(seqlen)
-        o['input_ids_2'] = o['input_ids_2'][:, :max_len]
-        o['attention_mask_2'] = o['attention_mask_2'][:, :max_len]
+        if 'seqlen2' in o:
+            seqlen = o.pop('seqlen2')
+            max_len = torch.max(seqlen)
+            o['input_ids2'] = o['input_ids2'][:, :max_len]
+            o['attention_mask2'] = o['attention_mask2'][:, :max_len]
         return o
 
 
@@ -162,8 +161,8 @@ class MyTransformer(TransformerModel, with_pl=True):
         labels: torch.Tensor = batch.pop('labels',None)
         if labels is not None:
             batch2 = {
-                "input_ids": batch.pop('input_ids_2'),
-                "attention_mask": batch.pop('attention_mask_2'),
+                "input_ids": batch.pop('input_ids2'),
+                "attention_mask": batch.pop('attention_mask2'),
             }
         logits1 = self.feat_head(self.model(*args,**batch)[0][:, 0, :])
         if labels is not None:
@@ -220,7 +219,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
 
         corrcoef = evaluate_sample(a_vecs, b_vecs,labels)
-
         f1 = corrcoef
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
@@ -233,7 +231,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments,DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="corrcoef", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
@@ -280,7 +278,8 @@ if __name__== '__main__':
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
-                                             with_record_iterable_dataset=True)
+                                             with_record_iterable_dataset=False,
+                                             with_load_memory=True)
 
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,

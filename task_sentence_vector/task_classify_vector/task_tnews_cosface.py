@@ -137,27 +137,28 @@ class NN_DataHelper(DataHelper):
 def generate_pair_example(all_example_dict: dict):
     all_example_dict = copy.copy(all_example_dict)
 
-    all_example_pos,all_example_neg = [],[]
+    all_example_pos, all_example_neg = [], []
     all_keys = list(all_example_dict.keys())
     np.random.shuffle(all_keys)
 
     num_all = 0
-    for k,v in all_example_dict.items():
+    for k, v in all_example_dict.items():
         num_all += len(v)
     pos_num_max = num_all // 2 // 5
     for pos_label in all_keys:
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(len(examples) // 5) if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
+        num_size = int(len(examples) // 2 // 5) if len(examples) > 100 else np.random.randint(1, min(50, len(examples)),
+                                                                                              dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))
         ids = np.random.choice(id_list, replace=False, size=num_size)
-        ids = sorted(ids,reverse=True)
+        ids = sorted(ids, reverse=True)
 
         flag = False
-        for i1,i2 in zip(ids[::2],ids[1::2]):
+        for i1, i2 in zip(ids[::2], ids[1::2]):
             v1 = examples[i1]
             v2 = examples[i2]
             examples.pop(i1)
@@ -175,17 +176,17 @@ def generate_pair_example(all_example_dict: dict):
     for k in all_keys:
         d_list = all_example_dict[k]
         for d in d_list:
-            flat_examples.append((k,d))
+            flat_examples.append((k, d))
     print('construct neg from {} flat_examples'.format(len(flat_examples)))
     idx_list = list(range(len(flat_examples)))
     np.random.shuffle(idx_list)
     while len(idx_list) >= 2:
         flag = False
-        k1,e1 = flat_examples[idx_list.pop(0)]
+        k1, e1 = flat_examples[idx_list.pop(0)]
         for i in idx_list[1:]:
-            k2,e2 = flat_examples[i]
+            k2, e2 = flat_examples[i]
             if k1 != k2:
-                all_example_neg.append((e1,e2))
+                all_example_neg.append((e1, e2))
                 idx_list.remove(i)
                 if len(all_example_neg) > len(all_example_pos) * 5:
                     flag = True
@@ -193,8 +194,8 @@ def generate_pair_example(all_example_dict: dict):
                 break
         if flag:
             break
-    print('pos num',len(all_example_pos),'neg num',len(all_example_neg) )
-    return all_example_pos,all_example_neg
+    print('pos num', len(all_example_pos), 'neg num', len(all_example_neg))
+    return all_example_pos, all_example_neg
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
@@ -320,7 +321,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="corrcoef", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
