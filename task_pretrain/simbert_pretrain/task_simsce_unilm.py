@@ -8,7 +8,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.layers.mask import unilm_mask
-from deep_training.nlp.losses.contrast import compute_simcse_loss
+from deep_training.nlp.losses.contrast import SimcseLoss
 from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -109,6 +109,7 @@ class MyTransformer(TransformerModelForUnilm, with_pl=True):
         super(MyTransformer, self).__init__(*args,**kwargs)
         config = self.config
         self.sim_head = nn.Linear(config.hidden_size, 512, bias=False)
+        self.loss_fn = SimcseLoss()
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
@@ -117,7 +118,7 @@ class MyTransformer(TransformerModelForUnilm, with_pl=True):
 
     def compute_loss(self, *args,**batch) -> tuple:
         if self.training:
-            batch = {k: torch.repeat_interleave(v, 2, dim=1) for k, v in batch.items()}
+            batch = {k: torch.repeat_interleave(v, 2, dim=0) for k, v in batch.items()}
         labels = batch.pop('labels',None)
         batch['attention_mask'] = unilm_mask(batch['token_type_ids'])
         outputs = self.model(*args,**batch)
@@ -128,7 +129,7 @@ class MyTransformer(TransformerModelForUnilm, with_pl=True):
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
             loss1 = self.model.loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            loss2 = compute_simcse_loss(simcse_logits)
+            loss2 = self.loss_fn (simcse_logits)
             loss = loss1 + loss2
             loss_dict = {
                 'loss': loss,

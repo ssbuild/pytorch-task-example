@@ -160,23 +160,6 @@ class NN_DataHelper(DataHelper):
                 D.append((item1,item2,None))
         return D
 
-    #训练
-    @staticmethod
-    def collate_fn_for_train(batch):
-        o = {}
-        for i, b in enumerate(batch):
-            if i == 0:
-                for k in b:
-                    o[k] = [torch.tensor(b[k])]
-            else:
-                for k in b:
-                    o[k].append(torch.tensor(b[k]))
-        for k in o:
-            o[k] = torch.stack(o[k])
-        max_len = torch.max(o.pop('seqlen'))
-        o['input_ids'] = o['input_ids'][:, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :max_len]
-        return {k: torch.repeat_interleave(v,2,0) for k, v in o.items()}
 
     @staticmethod
     def collate_fn(batch):
@@ -241,6 +224,10 @@ class MyTransformer(TransformerModel, with_pl=True):
 
     def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels',None)
+
+        if self.training:
+            batch = {k: torch.repeat_interleave(v, 2, dim=0) for k, v in batch.items()}
+
         if labels is not None:
             inputs = {}
             for k in list(batch.keys()):
@@ -375,7 +362,7 @@ if __name__ == '__main__':
         # 随机选出一万训练数据
         train_datasets = torch_Dataset(train_datasets.limit(10000))
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn_for_train,
+                                    collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     # 修改config的dropout系数
