@@ -355,15 +355,20 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         #当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
         data_dir = os.path.dirname(data_args.eval_file[0])
-        eval_pos_cache_file = os.path.join(data_dir, 'eval_pos.record.cache')
-        eval_neg_cache_file = os.path.join(data_dir, 'eval_neg.record.cache')
+        eval_pos_neg_cache_file = os.path.join(data_dir, 'eval_pos_neg.record.cache')
         # 缓存文件
-        if os.path.exists(eval_pos_cache_file) and os.path.exists(eval_neg_cache_file):
-            eval_datasets_pos = record.load_dataset.RandomDataset(eval_pos_cache_file,options=options).parse_from_numpy_writer()
-            eval_datasets_neg = record.load_dataset.RandomDataset(eval_neg_cache_file,options=options).parse_from_numpy_writer()
-            print('pos num',len(eval_datasets_pos) // 2,'neg num',len(eval_datasets_neg) // 2)
-            pos_data = [(eval_datasets_pos[i], eval_datasets_pos[i + 1]) for i in range(0, len(eval_datasets_pos), 2)]
-            neg_data = [(eval_datasets_neg[i], eval_datasets_neg[i + 1]) for i in range(0, len(eval_datasets_neg), 2)]
+        if os.path.exists(eval_pos_neg_cache_file):
+            eval_datasets_pos_neg = record.load_dataset.RandomDataset(eval_pos_neg_cache_file,
+                                                                      options=options).parse_from_numpy_writer()
+            pos_data, neg_data = [], []
+            for o in eval_datasets_pos_neg:
+                obj_list = pos_data if np.squeeze(o['positive']) > 0 else neg_data
+                keys1, keys2 = [k for k in o if not k.endswith('2')], [k for k in o if k.endswith('2')]
+                d1 = {k: o[k] for k in keys1}
+                d2 = {k.replace('2', ''): o[k] for k in keys2}
+                obj_list.append(d1)
+                obj_list.append(d2)
+            print('pos num', len(pos_data) // 2, 'neg num', len(neg_data) // 2)
         else:
             eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
             all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
@@ -373,18 +378,19 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 if label not in map_data:
                     map_data[label] = []
                 map_data[label].append(d)
-            pos_data,neg_data = generate_pair_example(map_data)
-
-            f_out = record.NumpyWriter(eval_pos_cache_file,options=options)
+            pos_data, neg_data = generate_pair_example(map_data)
+            # 生成缓存文件
+            f_out = record.NumpyWriter(eval_pos_neg_cache_file, options=options)
             for pair in pos_data:
-                f_out.write(pair[0])
-                f_out.write(pair[1])
-            f_out.close()
-
-            f_out = record.NumpyWriter(eval_neg_cache_file, options=options)
+                o = copy.copy(pair[0])
+                for k, v in pair[1].items():
+                    o[k + '2'] = v
+                o['positive'] = np.asarray(1, dtype=np.int32)
             for pair in neg_data:
-                f_out.write(pair[0])
-                f_out.write(pair[1])
+                o = copy.copy(pair[0])
+                for k, v in pair[1].items():
+                    o[k + '2'] = v
+                o['positive'] = np.asarray(0, dtype=np.int32)
             f_out.close()
 
         a_data = [_[0] for _ in pos_data + neg_data]
