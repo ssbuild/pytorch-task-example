@@ -362,7 +362,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                                                                       options=options).parse_from_numpy_writer()
             pos_data, neg_data = [], []
             for o in eval_datasets_pos_neg:
-                obj_list = pos_data if np.squeeze(o['positive']) > 0 else neg_data
+                obj_list = pos_data if np.squeeze(o.pop('positive')) > 0 else neg_data
                 keys1, keys2 = [k for k in o if not k.endswith('2')], [k for k in o if k.endswith('2')]
                 d1 = {k: o[k] for k in keys1}
                 d2 = {k.replace('2', ''): o[k] for k in keys2}
