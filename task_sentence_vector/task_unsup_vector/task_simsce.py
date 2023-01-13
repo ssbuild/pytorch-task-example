@@ -29,7 +29,7 @@ train_info_args = {
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-     'do_train': True,
+    'do_train': True,
     'do_eval': True,
      # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
     # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
@@ -40,7 +40,7 @@ train_info_args = {
     'max_steps': 100000,
     'optimizer': 'adamw',
     'learning_rate':5e-5,
-    'train_batch_size': 10,
+    'train_batch_size': 40,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -121,8 +121,7 @@ class NN_DataHelper(DataHelper):
         id2label = {i: label for i, label in enumerate(D)}
         return label2id, id2label
 
-        # 读取文件
-
+    # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
         D = []
         for filename in files:
@@ -141,6 +140,24 @@ class NN_DataHelper(DataHelper):
                         D.append((s1, s2, l))
         return D
 
+    #训练
+    @staticmethod
+    def collate_fn_for_train(batch):
+        o = {}
+        for i, b in enumerate(batch):
+            if i == 0:
+                for k in b:
+                    o[k] = [torch.tensor(b[k])]
+            else:
+                for k in b:
+                    o[k].append(torch.tensor(b[k]))
+        for k in o:
+            o[k] = torch.stack(o[k])
+        max_len = torch.max(o.pop('seqlen'))
+        o['input_ids'] = o['input_ids'][:, :max_len]
+        o['attention_mask'] = o['attention_mask'][:, :max_len]
+        return {k: torch.repeat_interleave(v,2,0) for k, v in o.items()}
+
     @staticmethod
     def collate_fn(batch):
         o = {}
@@ -153,7 +170,6 @@ class NN_DataHelper(DataHelper):
                     o[k].append(torch.tensor(b[k]))
         for k in o:
             o[k] = torch.stack(o[k])
-
         max_len = torch.max(o.pop('seqlen'))
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
@@ -211,9 +227,7 @@ class MyTransformer(TransformerModel, with_pl=True):
                     inputs[k.replace('2', '')] = batch.pop(k)
         simcse_logits = self.forward_for_hidden(*args,**batch)
         if self.training:
-            batch2 = {k: torch.clone(v) for k, v in batch.items()}
-            simcse_logits2 = self.forward_for_hidden(*args, **batch2)
-            loss = self.loss_fn (cat_even_odd_reorder(simcse_logits,simcse_logits2))
+            loss = self.loss_fn (simcse_logits)
             outputs = (loss,)
         elif labels is not None:
             simcse_logits2 = self.forward_for_hidden(*args, **inputs)
@@ -337,7 +351,7 @@ if __name__ == '__main__':
 
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
+                                    collate_fn=dataHelper.collate_fn_for_train,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     # 修改config的dropout系数

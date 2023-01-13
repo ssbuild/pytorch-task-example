@@ -269,7 +269,9 @@ def evaluate_sample(a_vecs,b_vecs,labels):
 
 class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
     def __init__(self,*args, **kwargs):
+        pooling = kwargs.pop('pooling', 'cls')
         super(MyTransformer, self).__init__(*args, **kwargs)
+        self.pooling = pooling
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
         self.loss_fn = InfoNCE(negative_mode='paired',reduction='sum')
 
@@ -278,11 +280,28 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
-    def forward_hidden(self,*args,**batch):
-        outputs = self.model(*args, **batch)
-        logits = self.feat_head(outputs[0][:, 0])
-        logits = torch.tan(logits)
-        return logits
+    def forward_for_hidden(self, *args, **batch):
+        outputs = self.model(*args, **batch, output_hidden_states=True, )
+        if self.pooling == 'cls':
+            simcse_logits = outputs[0][:, 0]
+        elif self.pooling == 'pooler':
+            simcse_logits = outputs[1]
+        elif self.pooling == 'last-avg':
+            last = outputs[0].transpose(1, 2)  # [batch, 768, seqlen]
+            simcse_logits = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
+        elif self.pooling == 'first-last-avg':
+            first = outputs[2][1].transpose(1, 2)  # [batch, 768, seqlen]
+            last = outputs[2][-1].transpose(1, 2)  # [batch, 768, seqlen]
+            first_avg = torch.avg_pool1d(first, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
+            last_avg = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
+            avg = torch.cat((first_avg.unsqueeze(1), last_avg.unsqueeze(1)), dim=1)  # [batch, 2, 768]
+            simcse_logits = torch.avg_pool1d(avg.transpose(1, 2), kernel_size=2).squeeze(-1)  # [batch, 768]
+        elif self.pooling == 'reduce':
+            simcse_logits = self.sim_head(outputs[1])
+            simcse_logits = torch.tanh(simcse_logits)
+        else:
+            raise ValueError('not support pooling', self.pooling)
+        return simcse_logits
 
     def compute_loss(self, *args,**batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels',None)
@@ -296,7 +315,7 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
                     inputs = {}
                     inputs['input_ids'] = input_ids[:,i]
                     inputs['attention_mask'] = attention_mask[:, i]
-                    pos.append(self.forward_hidden(**inputs))
+                    pos.append(self.forward_for_hidden(**inputs))
                 input_ids = batch['input_ids2']
                 attention_mask = batch['attention_mask2']
                 n = input_ids.size(1)
@@ -304,14 +323,14 @@ class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl
                     inputs = {}
                     inputs['input_ids'] = input_ids[:, i]
                     inputs['attention_mask'] = attention_mask[:, i]
-                    neg.append(self.forward_hidden(**inputs))
+                    neg.append(self.forward_for_hidden(**inputs))
 
                 neg_key = torch.stack(neg,dim=1)
                 query,pos_key = pos
                 loss = self.loss_fn(query,pos_key,neg_key)
                 outputs = (loss,)
             else:
-                logits = self.forward_hidden(*args, **batch)
+                logits = self.forward_for_hidden(*args, **batch)
                 outputs = (None, logits,labels)
         else:
             logits = self.forward_hidden(*args,**batch)
