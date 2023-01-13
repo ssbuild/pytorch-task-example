@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# 1、原论文batch_size=512，这里是batch_size=64（实在跑不起这么壕的batch_size）；
+# 2、原论文的学习率是5e-5，这里是1e-5；
+# 3、原论文的最优dropout比例是0.1，这里是0.3；
+# 4、原论文的无监督SimCSE是在额外数据上训练的，这里直接随机选了1万条任务数据训练；
+# 5、原文无监督训练的时候还带了个MLM任务，这里只有SimCSE训练。
+
 import copy
 import json
 import logging
@@ -11,11 +17,10 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.contrast import SimcseLoss
-from deep_training.nlp.losses.loss_cosent import cat_even_odd_reorder
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
+from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from torch import nn
@@ -38,7 +43,7 @@ train_info_args = {
     'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    'max_epochs':1,
+    'max_epochs': 1,
     'optimizer': 'adamw',
     'learning_rate':1e-5,
     'train_batch_size': 40,
@@ -70,12 +75,9 @@ class NN_DataHelper(DataHelper):
         self.index += 1
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-
         sentence1, sentence2, label_str = data
-
         if mode == 'train':
             ds = []
-
             for sentence in [sentence1, sentence2]:
                 o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
                 for k in o:
@@ -91,7 +93,7 @@ class NN_DataHelper(DataHelper):
                     'attention_mask': o['attention_mask'],
                     'seqlen': seqlen
                 }
-                ds.append(d)
+                ds.append(copy.deepcopy(d))
             return ds
         #验证
         else:
@@ -146,14 +148,13 @@ class NN_DataHelper(DataHelper):
                         line = line.replace('\r\n', '').replace('\n', '')
                         s1, s2, l = line.split('\t', 2)
                         D.append((s1, s2, l))
-
+        # 训练数据重排序
         if mode == 'train':
             tmp = []
             for item in D:
                 tmp.append(item[0])
                 tmp.append(item[1])
             random.shuffle(tmp)
-
             D.clear()
             for item1,item2 in zip(tmp[::2], tmp[1::2]):
                 D.append((item1,item2,None))
@@ -198,28 +199,6 @@ class NN_DataHelper(DataHelper):
             o['attention_mask2'] = o['attention_mask2'][:, :max_len]
         return o
 
-from torch.nn import functional as F
-def simcse_unsup_loss(y_pred, temp=0.05):
-    """无监督的损失函数
-    y_pred (tensor): bert的输出, [batch_size * 2, 768]
-
-    """
-    device = y_pred.device
-    # 得到y_pred对应的label, [1, 0, 3, 2, ..., batch_size-1, batch_size-2]
-    y_true = torch.arange(y_pred.shape[0], device=device)
-    y_true = (y_true - y_true % 2 * 2) + 1
-
-    # batch内两两计算相似度, 得到相似度矩阵(对角矩阵)
-    # [batch_size * 2, 1, 768] * [1, batch_size * 2, 768] = [batch_size * 2, batch_size * 2]
-    sim = F.cosine_similarity(y_pred.unsqueeze(1), y_pred.unsqueeze(0), dim=-1)
-
-    # 将相似度矩阵对角线置为很小的值, 消除自身的影响
-    sim = sim - torch.eye(y_pred.shape[0], device=device) * 1e12
-    sim = sim / temp  # 相似度矩阵除以温度系数
-
-    # 计算相似度矩阵与y_true的交叉熵损失
-    loss = F.cross_entropy(sim, y_true,reduction='sum')
-    return torch.mean(loss)
 
 
 class MyTransformer(TransformerModel, with_pl=True):
@@ -269,8 +248,7 @@ class MyTransformer(TransformerModel, with_pl=True):
                     inputs[k.replace('2', '')] = batch.pop(k)
         simcse_logits = self.forward_for_hidden(*args,**batch)
         if self.training:
-            # loss = self.loss_fn (simcse_logits)
-            loss = simcse_unsup_loss(simcse_logits)
+            loss = self.loss_fn (simcse_logits)
             outputs = (loss,)
         elif labels is not None:
             simcse_logits2 = self.forward_for_hidden(*args, **inputs)
@@ -393,8 +371,9 @@ if __name__ == '__main__':
                                              with_load_memory=True,with_torchdataset=False)
 
 
-
     if train_datasets is not None:
+        # 随机选出一万训练数据
+        train_datasets = torch_Dataset(train_datasets.limit(10000))
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn_for_train,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)

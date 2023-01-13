@@ -15,12 +15,13 @@ from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
+from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices':  1,
+    'devices': 1,
     'data_backend': 'record',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -28,17 +29,17 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': True,
-     # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
+    # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
     # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
     # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
-    'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
-    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
-    'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    'max_epochs':3,
+    'train_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
+    'test_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
+    'max_epochs': 10,
     'optimizer': 'adamw',
-    'learning_rate':5e-5,
-    'train_batch_size': 20,
-    'eval_batch_size': 20,
+    'learning_rate': 1e-5,
+    'train_batch_size': 10,
+    'eval_batch_size': 10,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -50,7 +51,7 @@ train_info_args = {
     'eval_max_seq_length': 64,
     'test_max_seq_length': 64,
     ##### tsdae 模型参数
-    'pooling': 'cls', # one of [cls,reduce]
+    'pooling': 'cls',  # one of [cls,reduce]
     'vector_size': 512,
     'num_encoder_layer': 12,
     'num_decoder_layer': 6,
@@ -60,18 +61,21 @@ train_info_args = {
     'decoder_config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
 }
 
-def pad_to_seqlength(sentence,tokenizer,max_seq_length):
+
+def pad_to_seqlength(sentence, tokenizer, max_seq_length):
     tokenizer: BertTokenizer
-    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False )
-    arrs = [o['input_ids'],o['attention_mask']]
-    seqlen = np.asarray(len(arrs[0]),dtype=np.int64)
-    input_ids,attention_mask = seq_pading(arrs,max_seq_length=max_seq_length,pad_val=tokenizer.pad_token_id)
+    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,
+                  return_token_type_ids=False)
+    arrs = [o['input_ids'], o['attention_mask']]
+    seqlen = np.asarray(len(arrs[0]), dtype=np.int64)
+    input_ids, attention_mask = seq_pading(arrs, max_seq_length=max_seq_length, pad_val=tokenizer.pad_token_id)
     d = {
         'input_ids': input_ids,
         'attention_mask': attention_mask,
         'seqlen': seqlen
     }
     return d
+
 
 def add_token_noise(tokens, del_ratio=0.6):
     n = len(tokens)
@@ -81,35 +85,39 @@ def add_token_noise(tokens, del_ratio=0.6):
     keep_or_not[0] = True
     keep_or_not[-1] = True
     if sum(keep_or_not) == 0:
-        keep_or_not[ np.random.randint(1,n-1,dtype=np.int32)] = True # guarantee that at least one word remains
-    return [tokens[i] for i,bkeep in enumerate(keep_or_not) if bkeep]
+        keep_or_not[np.random.randint(1, n - 1, dtype=np.int32)] = True  # guarantee that at least one word remains
+    return [tokens[i] for i, bkeep in enumerate(keep_or_not) if bkeep]
+
 
 class NN_DataHelper(DataHelper):
     # 切分词
     def on_data_process(self, data: typing.Any, user_data: tuple):
         tokenizer: BertTokenizer
-        tokenizer,decoder_tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
+        tokenizer, decoder_tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
         sentence1, sentence2, label_str = data
-        #sentence1, sentence2 independent sample for training
+        # sentence1, sentence2 independent sample for training
         if mode == 'train':
             d = []
-            for sentence in [sentence1,sentence2]:
-                tokens_ids = tokenizer.convert_tokens_to_ids(add_token_noise(tokenizer.tokenize(sentence,truncation=True, add_special_tokens=True,return_token_type_ids=False)))
+            for sentence in [sentence1, sentence2]:
+                tokens_ids = tokenizer.convert_tokens_to_ids(add_token_noise(
+                    tokenizer.tokenize(sentence, truncation=True, add_special_tokens=True,
+                                       return_token_type_ids=False)))
                 seqlen = len(tokens_ids)
                 d.append({
                     'input_ids': seq_padding(tokens_ids, max_seq_length=max_seq_length, dtype=np.int32),
                     'attention_mask': seq_padding([1] * seqlen, max_seq_length=max_seq_length, dtype=np.int32),
                     'seqlen': np.asarray(seqlen, dtype=np.int32),
-                    **{'target_' +k : v for k,v in pad_to_seqlength(sentence,decoder_tokenizer,max_seq_length).items()},
+                    **{k + '2' : v for k, v in
+                       pad_to_seqlength(sentence, decoder_tokenizer, max_seq_length).items()},
                 })
-        #评估样本
+        # 评估样本
         else:
             labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
             d1 = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
             d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
             d = d1
-            for k,v in d2.items():
-                d['target_' + k] = v
+            for k, v in d2.items():
+                d[k+ '2'] = v
             d['labels'] = labels
         return d
 
@@ -137,7 +145,19 @@ class NN_DataHelper(DataHelper):
                         line = line.replace('\r\n', '').replace('\n', '')
                         s1, s2, l = line.split('\t', 2)
                         D.append((s1, s2, l))
+        # 训练数据重排序
+        if mode == 'train':
+            tmp = []
+            for item in D:
+                tmp.append(item[0])
+                tmp.append(item[1])
+            random.shuffle(tmp)
+            D.clear()
+            for item1, item2 in zip(tmp[::2], tmp[1::2]):
+                D.append((item1, item2, None))
+
         return D
+
     @staticmethod
     def collate_fn(batch):
         o = {}
@@ -155,11 +175,10 @@ class NN_DataHelper(DataHelper):
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
 
-        if 'target_seqlen' in o:
-            seqlen = o.pop('target_seqlen')
-            max_len = torch.max(seqlen)
-            o['target_input_ids'] = o['target_input_ids'][:, :max_len]
-            o['target_attention_mask'] = o['target_attention_mask'][:, :max_len]
+        if 'seqlen2' in o:
+            max_len = torch.max(o.pop('seqlen2'))
+            o['input_ids2'] = o['input_ids2'][:, :max_len]
+            o['attention_mask2'] = o['attention_mask2'][:, :max_len]
         return o
 
 
@@ -167,12 +186,13 @@ class MyTransformer(TransformerForTSDAE, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
 
-def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
-    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
-    print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
-    print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
-    correlation,_  = stats.spearmanr(labels,sims)
+
+def evaluate_sample(a_vecs, b_vecs, labels):
+    print('*' * 30, 'evaluating....', a_vecs.shape, b_vecs.shape, labels.shape)
+    sims = 1 - paired_distances(a_vecs, b_vecs, metric='cosine')
+    print(np.concatenate([sims[:5], sims[-5:]], axis=0))
+    print(np.concatenate([labels[:5], labels[-5:]], axis=0))
+    correlation, _ = stats.spearmanr(labels, sims)
     print('spearman ', correlation)
     return correlation
 
@@ -190,7 +210,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
 
         a_vecs, b_vecs, labels = [], [], []
         for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
@@ -210,23 +231,25 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         a_vecs = np.stack(a_vecs, axis=0)
         b_vecs = np.stack(b_vecs, axis=0)
         labels = np.stack(labels, axis=0)
-        labels = np.squeeze(labels,axis=-1)
+        labels = np.squeeze(labels, axis=-1)
 
         corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
 
         f1 = corrcoef
-        best_f1 = self.best.get('f1',-np.inf)
+        best_f1 = self.best.get('f1', -np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
             logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
 
-if __name__ == '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,TsdaelArguments))
-    model_args, training_args, data_args,tsdae_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
+if __name__ == '__main__':
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments, TsdaelArguments))
+    model_args, training_args, data_args, tsdae_args = parser.parse_dict(train_info_args)
+
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1",
+                                                  every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -245,38 +268,37 @@ if __name__ == '__main__':
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
                                                                                 data_args)
-    decoder_tokenizer,decoder_config = None,None
+    decoder_tokenizer, decoder_config = None, None
     if data_args.do_train:
-        #加载解码器配置，非训练模式可以不加载
+        # 加载解码器配置，非训练模式可以不加载
         decoder_tokenizer = load_tokenizer(tokenizer_name=tsdae_args.decoder_tokenizer_name,
-                                   model_name_or_path=tsdae_args.decoder_model_name_or_path,
-                                   cache_dir=model_args.cache_dir,
-                                   do_lower_case=model_args.do_lower_case,
-                                   use_fast_tokenizer=model_args.use_fast_tokenizer,
-                                   model_revision=model_args.model_revision,
-                                   use_auth_token=model_args.use_auth_token,
-                                   )
+                                           model_name_or_path=tsdae_args.decoder_model_name_or_path,
+                                           cache_dir=model_args.cache_dir,
+                                           do_lower_case=model_args.do_lower_case,
+                                           use_fast_tokenizer=model_args.use_fast_tokenizer,
+                                           model_revision=model_args.model_revision,
+                                           use_auth_token=model_args.use_auth_token,
+                                           )
 
         decoder_config = load_configure(config_name=tsdae_args.decoder_config_name,
-                                model_name_or_path=tsdae_args.decoder_model_name_or_path,
-                                cache_dir=model_args.cache_dir,
-                                model_revision=model_args.model_revision,
-                                use_auth_token=model_args.use_auth_token,
-                                **{
-                                    "bos_token_id" : decoder_tokenizer.bos_token_id,
-                                    "pad_token_id" : decoder_tokenizer.pad_token_id,
-                                    "eos_token_id" : decoder_tokenizer.eos_token_id,
-                                    "sep_token_id" : decoder_tokenizer.sep_token_id
-                                })
-
+                                        model_name_or_path=tsdae_args.decoder_model_name_or_path,
+                                        cache_dir=model_args.cache_dir,
+                                        model_revision=model_args.model_revision,
+                                        use_auth_token=model_args.use_auth_token,
+                                        **{
+                                            "bos_token_id": decoder_tokenizer.bos_token_id,
+                                            "pad_token_id": decoder_tokenizer.pad_token_id,
+                                            "eos_token_id": decoder_tokenizer.eos_token_id,
+                                            "sep_token_id": decoder_tokenizer.sep_token_id
+                                        })
 
     rng = random.Random(training_args.seed)
     token_fn_args_dict = {
-        'train': (tokenizer,decoder_tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id,
+        'train': (tokenizer, decoder_tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id,
                   'train'),
-        'eval': (tokenizer,decoder_tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id,
+        'eval': (tokenizer, decoder_tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id,
                  'eval'),
-        'test': (tokenizer,decoder_tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id,
+        'test': (tokenizer, decoder_tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id,
                  'test')
     }
 
@@ -302,17 +324,18 @@ if __name__ == '__main__':
                                                                        mode='test'))
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
-                                             process_index=trainer.global_rank,
-                                             infinite=True,
+                                             process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=False,
-                                             with_load_memory=True)
+                                             with_load_memory=True, with_torchdataset=False)
 
     if train_datasets is not None:
+        # 随机选出一万训练数据
+        train_datasets = torch_Dataset(train_datasets.limit(10000))
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-    model = MyTransformer(tsdae_args=tsdae_args,decoder_tokenizer=decoder_tokenizer,decoder_config=decoder_config,
+    model = MyTransformer(tsdae_args=tsdae_args, decoder_tokenizer=decoder_tokenizer, decoder_config=decoder_config,
                           config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
@@ -327,7 +350,7 @@ if __name__ == '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')

@@ -7,7 +7,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.contrast import compute_simcse_loss
+from deep_training.nlp.losses.contrast import SimcseLoss
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
 from pytorch_lightning import Trainer
@@ -26,7 +26,7 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
-    'max_epochs':3,
+    'max_epochs': 3,
     'optimizer': 'adamw',
     'learning_rate': 5e-5,
     'train_batch_size': 10,
@@ -127,6 +127,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         self.mlm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.sim_head = nn.Linear(config.hidden_size, 512, bias=False)
         self.loss_fct = CrossEntropyLoss(reduction='none', ignore_index=self.config.pad_token_id)
+        self.loss_cse = SimcseLoss()
 
     def get_model_lr(self):
         return super(MyTransformer, self).get_model_lr() + [
@@ -152,7 +153,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         simcse_logits = self.sim_head(outputs[1])
         if labels is not None:
             loss1 = self.comput_loss_mlm(labels, mlm_logits, weight)
-            loss2 = compute_simcse_loss(simcse_logits)
+            loss2 = self.loss_cse(simcse_logits)
             loss = loss1 + loss2
             loss_dict = {
                 'mlm_loss': loss1,
@@ -174,7 +175,7 @@ if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,MlmDataArguments))
     model_args, training_args, data_args,mlm_data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_epochs=1)
+    checkpoint_callback = ModelCheckpoint(monitor="loss", every_n_train_steps=1000)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -236,9 +237,10 @@ if __name__== '__main__':
                                              with_record_iterable_dataset=True)
 
     if train_datasets is not None:
+        # 读取不能打乱数据
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else False)
     
 
     model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
