@@ -289,9 +289,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 keys1, keys2 = [k for k in o if not k.endswith('2')], [k for k in o if k.endswith('2')]
                 d1 = {k: o[k] for k in keys1}
                 d2 = {k.replace('2', ''): o[k] for k in keys2}
-                obj_list.append(d1)
-                obj_list.append(d2)
-            print('pos num', len(pos_data) // 2, 'neg num', len(neg_data) // 2)
+                obj_list.append((d1,d2))
+            print('pos num', len(pos_data) , 'neg num', len(neg_data))
         else:
             eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
             all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
