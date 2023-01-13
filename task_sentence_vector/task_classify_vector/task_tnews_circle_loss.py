@@ -297,14 +297,16 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             f_out = record.NumpyWriter(eval_pos_neg_cache_file,options=options)
             for pair in pos_data:
                 o = copy.copy(pair[0])
-                for k,v in pair[1].items():
+                for k, v in pair[1].items():
                     o[k + '2'] = v
-                o['positive'] = np.asarray(1,dtype=np.int32)
+                o['positive'] = np.asarray(1, dtype=np.int32)
+                f_out.write(o)
             for pair in neg_data:
                 o = copy.copy(pair[0])
                 for k, v in pair[1].items():
                     o[k + '2'] = v
                 o['positive'] = np.asarray(0, dtype=np.int32)
+                f_out.write(o)
             f_out.close()
 
 
