@@ -199,7 +199,7 @@ def generate_pair_example(all_example_dict: dict):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',len(a_vecs))
+    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
@@ -213,7 +213,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         super(MyTransformer, self).__init__(*args,**kwargs)
         self.pooling = pooling
         self.feat_head = nn.Linear(self.config.hidden_size, 512, bias=False)
-        self.metric_product = AddMarginProduct(512,self.config.num_labels,s=30.0, m=0.40)
+        self.metric_product = AddMarginProduct(512 if self.pooling == 'reduce' else 768,self.config.num_labels,s=30.0, m=0.40)
         loss_type = 'cross_loss'
         if loss_type == 'focal_loss':
             self.loss_fn = FocalLoss(gamma=2)

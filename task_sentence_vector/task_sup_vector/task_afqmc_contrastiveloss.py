@@ -48,7 +48,9 @@ train_info_args = {
     'weight_decay':0,
     'warmup_steps':0,
     'output_dir':'./output',
-    'max_seq_length': 140
+    'train_max_seq_length': 64,
+    'eval_max_seq_length': 100,
+    'test_max_seq_length': 100,
 }
 #cls , pooler , last-avg , first-last-avg , reduce
 pooling = 'cls'
@@ -194,7 +196,7 @@ class MyTransformer(TransformerModel, with_pl=True):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',len(a_vecs))
+    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))

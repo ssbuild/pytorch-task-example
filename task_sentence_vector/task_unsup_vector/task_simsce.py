@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import copy
 import json
 import logging
 import random
@@ -31,16 +32,17 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': True,
-     # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
+    # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
     # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
     # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
     'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    'max_steps': 100000,
+    'max_epochs':1,
     'optimizer': 'adamw',
-    'learning_rate':5e-5,
+    'learning_rate':1e-5,
     'train_batch_size': 40,
+    'eval_batch_size': 20,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -48,10 +50,9 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 128,
-    'eval_max_seq_length': 128,
-    'test_max_seq_length': 128,
-
+    'train_max_seq_length': 64,
+    'eval_max_seq_length': 64,
+    'test_max_seq_length': 64,
 }
 
 #cls , pooler , last-avg , first-last-avg , reduce
@@ -59,8 +60,14 @@ pooling = 'cls'
 
 
 class NN_DataHelper(DataHelper):
+    index = 1
+
+    def on_data_ready(self):
+        self.index = -1
+
     # 切分词
     def on_data_process(self, data: typing.Any, user_data: tuple):
+        self.index += 1
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
 
@@ -68,6 +75,7 @@ class NN_DataHelper(DataHelper):
 
         if mode == 'train':
             ds = []
+
             for sentence in [sentence1, sentence2]:
                 o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
                 for k in o:
@@ -89,7 +97,7 @@ class NN_DataHelper(DataHelper):
         else:
             ds = {}
             for sentence in [sentence1, sentence2]:
-                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
+                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
                 for k in o:
                     o[k] = np.asarray(o[k],dtype=np.int32)
                 seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
@@ -138,6 +146,17 @@ class NN_DataHelper(DataHelper):
                         line = line.replace('\r\n', '').replace('\n', '')
                         s1, s2, l = line.split('\t', 2)
                         D.append((s1, s2, l))
+
+        if mode == 'train':
+            tmp = []
+            for item in D:
+                tmp.append(item[0])
+                tmp.append(item[1])
+            random.shuffle(tmp)
+
+            D.clear()
+            for item1,item2 in zip(tmp[::2], tmp[1::2]):
+                D.append((item1,item2,None))
         return D
 
     #训练
@@ -178,6 +197,29 @@ class NN_DataHelper(DataHelper):
             o['input_ids2'] = o['input_ids2'][:, :max_len]
             o['attention_mask2'] = o['attention_mask2'][:, :max_len]
         return o
+
+from torch.nn import functional as F
+def simcse_unsup_loss(y_pred, temp=0.05):
+    """无监督的损失函数
+    y_pred (tensor): bert的输出, [batch_size * 2, 768]
+
+    """
+    device = y_pred.device
+    # 得到y_pred对应的label, [1, 0, 3, 2, ..., batch_size-1, batch_size-2]
+    y_true = torch.arange(y_pred.shape[0], device=device)
+    y_true = (y_true - y_true % 2 * 2) + 1
+
+    # batch内两两计算相似度, 得到相似度矩阵(对角矩阵)
+    # [batch_size * 2, 1, 768] * [1, batch_size * 2, 768] = [batch_size * 2, batch_size * 2]
+    sim = F.cosine_similarity(y_pred.unsqueeze(1), y_pred.unsqueeze(0), dim=-1)
+
+    # 将相似度矩阵对角线置为很小的值, 消除自身的影响
+    sim = sim - torch.eye(y_pred.shape[0], device=device) * 1e12
+    sim = sim / temp  # 相似度矩阵除以温度系数
+
+    # 计算相似度矩阵与y_true的交叉熵损失
+    loss = F.cross_entropy(sim, y_true,reduction='sum')
+    return torch.mean(loss)
 
 
 class MyTransformer(TransformerModel, with_pl=True):
@@ -227,7 +269,8 @@ class MyTransformer(TransformerModel, with_pl=True):
                     inputs[k.replace('2', '')] = batch.pop(k)
         simcse_logits = self.forward_for_hidden(*args,**batch)
         if self.training:
-            loss = self.loss_fn (simcse_logits)
+            # loss = self.loss_fn (simcse_logits)
+            loss = simcse_unsup_loss(simcse_logits)
             outputs = (loss,)
         elif labels is not None:
             simcse_logits2 = self.forward_for_hidden(*args, **inputs)
@@ -238,7 +281,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         return outputs
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',len(a_vecs))
+    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
@@ -293,7 +336,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=1000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -347,7 +390,9 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=False,
-                                             with_load_memory=True)
+                                             with_load_memory=True,with_torchdataset=False)
+
+
 
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,

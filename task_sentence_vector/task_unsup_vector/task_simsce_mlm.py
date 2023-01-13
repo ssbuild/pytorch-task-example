@@ -26,7 +26,7 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
-    'max_steps': 100000,
+    'max_epochs':3,
     'optimizer': 'adamw',
     'learning_rate': 5e-5,
     'train_batch_size': 10,

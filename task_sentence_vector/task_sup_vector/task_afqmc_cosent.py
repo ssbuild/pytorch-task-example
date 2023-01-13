@@ -4,7 +4,6 @@ import logging
 import typing
 
 import numpy as np
-import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
@@ -14,8 +13,6 @@ from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.func import seq_pading
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from torch import nn
@@ -49,7 +46,9 @@ train_info_args = {
     'weight_decay':0,
     'warmup_steps':0,
     'output_dir':'./output',
-    'max_seq_length':140
+    'train_max_seq_length': 64,
+    'eval_max_seq_length': 100,
+    'test_max_seq_length': 100,
 }
 
 #cls , pooler , last-avg , first-last-avg , reduce
@@ -127,10 +126,8 @@ class NN_DataHelper(DataHelper):
             o[k] = torch.stack(o[k])
 
         max_len = torch.max(o.pop('seqlen'))
-
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
-
         if 'seqlen2' in o:
             seqlen = o.pop('seqlen2')
             max_len = torch.max(seqlen)
@@ -141,7 +138,7 @@ class NN_DataHelper(DataHelper):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',len(a_vecs))
+    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))

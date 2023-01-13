@@ -34,7 +34,7 @@ train_info_args = {
     'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    'max_steps': 100000,
+    'max_epochs':3,
     'optimizer': 'adamw',
     'learning_rate':5e-5,
     'train_batch_size': 20,
@@ -46,9 +46,9 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 100,
-    'eval_max_seq_length': 128,
-    'test_max_seq_length': 128,
+    'train_max_seq_length': 64,
+    'eval_max_seq_length': 64,
+    'test_max_seq_length': 64,
     ##### tsdae 模型参数
     'pooling': 'cls', # one of [cls,reduce]
     'vector_size': 512,
@@ -168,7 +168,7 @@ class MyTransformer(TransformerForTSDAE, with_pl=True):
         super(MyTransformer, self).__init__(*args, **kwargs)
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',len(a_vecs))
+    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
