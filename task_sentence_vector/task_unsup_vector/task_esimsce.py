@@ -20,7 +20,6 @@ from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from pytorch_lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
-from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
@@ -66,7 +65,7 @@ train_info_args = {
     'test_max_seq_length': 80,
 }
 
-#cls , pooler , last-avg , first-last-avg , reduce
+#cls , pooler , last-avg , first-last-avg
 pooling = 'cls'
 data_cut_config = {
     'qb_size':  4,

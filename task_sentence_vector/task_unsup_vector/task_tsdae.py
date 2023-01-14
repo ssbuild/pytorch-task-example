@@ -44,7 +44,7 @@ train_info_args = {
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
-    'max_epochs': 10,
+    'max_epochs': 5,
     'optimizer': 'adamw',
     'learning_rate': 1e-5,
     'train_batch_size': 10,
