@@ -32,9 +32,18 @@ train_info_args = {
     # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
     # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
     # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
-    'train_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
-    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
-    'test_file': '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    'train_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
+    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
+    'test_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
     'max_epochs': 10,
     'optimizer': 'adamw',
     'learning_rate': 1e-5,
@@ -112,21 +121,21 @@ class NN_DataHelper(DataHelper):
                 })
         # 评估样本
         else:
-            labels = np.asarray(label2id[label_str] if label_str is not None else 0, dtype=np.int64)
+
             d1 = pad_to_seqlength(sentence1, tokenizer, max_seq_length)
             d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
             d = d1
             for k, v in d2.items():
                 d[k+ '2'] = v
-            d['labels'] = labels
+
+            if label_str is not None:
+                labels = np.asarray(int(label_str), dtype=np.int32)
+                d['labels'] = labels
         return d
 
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
-        D = ['0', '1']
-        label2id = {label: i for i, label in enumerate(D)}
-        id2label = {i: label for i, label in enumerate(D)}
-        return label2id, id2label
+        return None,None
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
@@ -248,8 +257,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments, TsdaelArguments))
     model_args, training_args, data_args, tsdae_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1",
-                                                  every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1,every_n_train_steps=300 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -330,7 +338,7 @@ if __name__ == '__main__':
 
     if train_datasets is not None:
         # 随机选出一万训练数据
-        train_datasets = torch_Dataset(train_datasets.limit(10000))
+        train_datasets = torch_Dataset(train_datasets.limit(20000))
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 参考实现: https://github.com/shuxinyin/SimCSE-Pytorch
+# 这里直接随机选了小于2万条任务数据训练；
 
 import copy
 import json
@@ -35,13 +37,22 @@ train_info_args = {
     # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
     # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
     # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
-    'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
-    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
-    'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    'max_epochs': 1,
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
+    'max_epochs': 3,
     'optimizer': 'adamw',
-    'learning_rate':1e-5,
-    'train_batch_size': 40,
+    'learning_rate':3e-5,
+    'train_batch_size': 20,
     'eval_batch_size': 20,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
@@ -50,23 +61,24 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 64,
-    'eval_max_seq_length': 64,
-    'test_max_seq_length': 64,
+    'train_max_seq_length': 80,
+    'eval_max_seq_length': 80,
+    'test_max_seq_length': 80,
 }
 
 #cls , pooler , last-avg , first-last-avg , reduce
 pooling = 'cls'
 data_cut_config = {
-    'q_size': 160,
+    'qb_size':  4,
     'dup_rate': 0.15
 }
 
 
 class DataCut(object):
-    def __init__(self, tokenizer, q_size=160, dup_rate=0.15):
+    #qb_size 为缓存batch_size
+    def __init__(self, tokenizer, qb_size=10, dup_rate=0.15):
         self.q = []
-        self.q_size = q_size
+        self.qb_size = qb_size
         self.dup_rate = dup_rate
         self.tokenizer = tokenizer
 
@@ -77,7 +89,7 @@ class DataCut(object):
             dup_len = random.randint(a=0, b=max(
                 2, int(self.dup_rate * actual_len)))
             dup_word_index = random.sample(
-                list(range(1, actual_len)), k=dup_len)
+                list(range(1, actual_len)),  k=min(dup_len, actual_len - 1))
 
             dup_text = ''
             for index, word in enumerate(text):
@@ -106,20 +118,21 @@ class DataCut(object):
                 dup_text += word
                 if index in dup_word_index:
                     dup_text += word
-                dst_text.append(dup_text)
-            return dup_text
+            dst_text.append(dup_text)
+        return dst_text
 
-    def cache_negative_samples(self, batch) -> typing.Dict:
-        batch_size = len(batch['input_ids'])
+    def cache_negative_samples(self, batch) -> typing.Optional[typing.Dict]:
         negative_samples = None
         if len(self.q) > 0:
-            negative_samples = self.q[:self.q_size]
+            negative_samples = self.q[:self.qb_size]
             # print("size of negative_samples", len(negative_samples))
 
-        if len(self.q) + batch_size >= self.q_size:
-            del self.q[:batch_size]
-        self.q.extend(batch)
+        if len(self.q) + 1 >= self.qb_size:
+            self.q.pop(0)
+        self.q.append(batch)
         return negative_samples
+
+
 
 class NN_DataHelper(DataHelper):
     index = 1
@@ -136,7 +149,7 @@ class NN_DataHelper(DataHelper):
         sentence1, sentence2, label_str = data
         if mode == 'train':
             ds = []
-            sentence_poses = data_cut.word_repetition_chinese([sentence1, sentence2])
+            sentence_poses = data_cut.word_repetition_normal([sentence1, sentence2])
             for sentence in [sentence1, sentence2,*sentence_poses]:
                 o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
                 for k in o:
@@ -180,17 +193,14 @@ class NN_DataHelper(DataHelper):
                     for k,v in d.items():
                         ds[k+'2'] = v
             if label_str is not None:
-                labels = np.asarray(label2id[label_str], dtype=np.int32)
+                labels = np.asarray(int(label_str), dtype=np.int32)
                 ds['labels'] = labels
             return ds
 
 
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
-        D = ['0', '1']
-        label2id = {label: i for i, label in enumerate(D)}
-        id2label = {i: label for i, label in enumerate(D)}
-        return label2id, id2label
+        return None,None
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
@@ -240,10 +250,12 @@ class NN_DataHelper(DataHelper):
         o['input_ids'] = o['input_ids'][:, :,:max_len]
         o['attention_mask'] = o['attention_mask'][:, :,:max_len]
         #产生负样本
-        batch_neg_samples = NN_DataHelper.data_cut.cache_negative_samples(o)
+        batch_neg_samples = NN_DataHelper.data_cut.cache_negative_samples({k: torch.clone(v[:,0]) for k,v in o.items()})
+        o['neg_num'] = torch.tensor(len(batch_neg_samples) if batch_neg_samples is not None else 0,dtype=torch.int32)
         if batch_neg_samples is not None:
-            for k,v in batch_neg_samples.items():
-                o[k+'2'] = v
+            for i,samples in enumerate(batch_neg_samples):
+                for k,v in samples.items():
+                    o[k+ str(i)] = v
         return o
 
     @staticmethod
@@ -331,7 +343,7 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_train_steps=1000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1,every_n_train_steps=300 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -388,13 +400,14 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=False,
-                                             with_load_memory=True)
+                                             with_load_memory=True,with_torchdataset=False)
 
 
     if train_datasets is not None:
-
+        train_datasets = torch_Dataset(train_datasets.limit(20000))
+        train_datasets = torch_Dataset(train_datasets)
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
+                                    collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     # 修改config的dropout系数
