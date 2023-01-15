@@ -11,7 +11,7 @@ import typing
 
 import numpy as np
 import torch
-from deep_training.data_helper import DataHelper
+from deep_training.data_helper import DataHelper, load_tokenizer, load_configure
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.diffcse import TransformerForDiffcse, DiffcselArguments
@@ -51,8 +51,8 @@ train_info_args = {
     'max_epochs': 1,
     'optimizer': 'adamw',
     'learning_rate':1e-5,
-    'train_batch_size': 40,
-    'eval_batch_size': 20,
+    'train_batch_size': 8,
+    'eval_batch_size': 8,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -73,6 +73,7 @@ train_info_args = {
     'num_generator_layer': 6,
     'generator_model_type': 'bert',
     'generator_model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'generator_config_name':   '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
 }
 
 
@@ -81,6 +82,7 @@ def mask_tokens(tokenizer,mlm_probability,inputs: torch.Tensor, special_tokens_m
     """
     Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
     """
+    inputs = inputs.long()
     inputs = inputs.clone()
     labels = inputs.clone()
     # We sample a few tokens in each sequence for MLM training (with probability `mlm_probability`)
@@ -107,7 +109,7 @@ def mask_tokens(tokenizer,mlm_probability,inputs: torch.Tensor, special_tokens_m
     inputs[indices_random] = random_words[indices_random]
 
     # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-    return inputs, labels
+    return inputs.int(), labels.int()
 
 class NN_DataHelper(DataHelper):
     index = 1
@@ -221,7 +223,7 @@ class NN_DataHelper(DataHelper):
         mlm_input_ids, mlm_labels = mask_tokens(NN_DataHelper.tokenizer, NN_DataHelper.diffcse_args.mlm_probability,o['input_ids'])
         o['mlm_input_ids'] = mlm_input_ids
         o['mlm_labels'] = mlm_labels
-        o = {k: torch.reshape(v,(v.size(0),2,v.size(1))) for k, v in o.items()}
+        o = {k: torch.reshape(v,(-1,2,v.size(1))) for k, v in o.items()}
         return o
 
     @staticmethod
@@ -332,6 +334,21 @@ if __name__ == '__main__':
     NN_DataHelper.tokenizer = tokenizer
     NN_DataHelper.diffcse_args = diffcse_args
 
+    generator_config = None, None
+    if data_args.do_train:
+        # 加载解码器配置，非训练模式可以不加载
+        generator_config = load_configure(config_name=diffcse_args.generator_config_name,
+                                        model_name_or_path=diffcse_args.generator_model_name_or_path,
+                                        cache_dir=model_args.cache_dir,
+                                        model_revision=model_args.model_revision,
+                                        use_auth_token=model_args.use_auth_token,
+                                        **{
+                                            "bos_token_id": tokenizer.bos_token_id,
+                                            "pad_token_id": tokenizer.pad_token_id,
+                                            "eos_token_id": tokenizer.eos_token_id,
+                                            "sep_token_id": tokenizer.sep_token_id
+                                        })
+
     token_fn_args_dict = {
         'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id,
                   'train'),
@@ -378,7 +395,7 @@ if __name__ == '__main__':
     # 修改config的dropout系数
     config.attention_probs_dropout_prob = 0.3
     config.hidden_dropout_prob = 0.3
-    model = MyTransformer(diffcse_args=diffcse_args,config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(diffcse_args=diffcse_args,generator_config=generator_config,config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)

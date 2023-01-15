@@ -293,10 +293,10 @@ if __name__ == '__main__':
                                         model_revision=model_args.model_revision,
                                         use_auth_token=model_args.use_auth_token,
                                         **{
-                                            "bos_token_id": decoder_tokenizer.bos_token_id,
-                                            "pad_token_id": decoder_tokenizer.pad_token_id,
-                                            "eos_token_id": decoder_tokenizer.eos_token_id,
-                                            "sep_token_id": decoder_tokenizer.sep_token_id
+                                            "bos_token_id": tokenizer.bos_token_id,
+                                            "pad_token_id": tokenizer.pad_token_id,
+                                            "eos_token_id": tokenizer.eos_token_id,
+                                            "sep_token_id": tokenizer.sep_token_id
                                         })
 
     rng = random.Random(training_args.seed)

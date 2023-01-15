@@ -250,11 +250,12 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = o['attention_mask'][:, :,:max_len]
         #产生负样本
         batch_neg_samples = NN_DataHelper.data_cut.cache_negative_samples({k: torch.clone(v[:,0]) for k,v in o.items()})
-        o['neg_num'] = torch.tensor(len(batch_neg_samples) if batch_neg_samples is not None else 0,dtype=torch.int32)
+
+        o['neg_num'] = torch.tensor(len(batch_neg_samples) if batch_neg_samples is not None else 0, dtype=torch.int32)
         if batch_neg_samples is not None:
-            for i,samples in enumerate(batch_neg_samples):
-                for k,v in samples.items():
-                    o[k+ str(i)] = v
+            for i, samples in enumerate(batch_neg_samples):
+                for k, v in samples.items():
+                    o[k + str(i)] = v
         return o
 
     @staticmethod
