@@ -217,12 +217,11 @@ class NN_DataHelper(DataHelper):
         max_len = torch.max(o.pop('seqlen'))
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
-
         o = {k: torch.repeat_interleave(v, 2, dim=0) for k, v in o.items()}
-
-        o['mlm_input_ids'],o['mlm_labels'] =  mask_tokens(NN_DataHelper.tokenizer, NN_DataHelper.diffcse_args.mlm_probability,o['input_ids'])
-
-
+        mlm_input_ids, mlm_labels = mask_tokens(NN_DataHelper.tokenizer, NN_DataHelper.diffcse_args.mlm_probability,o['input_ids'])
+        o['mlm_input_ids'] = mlm_input_ids
+        o['mlm_labels'] = mlm_labels
+        o = {k: torch.reshape(v,(v.size(0),2,v.size(1))) for k, v in o.items()}
         return o
 
     @staticmethod
