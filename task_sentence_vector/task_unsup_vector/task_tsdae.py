@@ -243,7 +243,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         labels = np.squeeze(labels, axis=-1)
 
         corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
-
         f1 = corrcoef
         best_f1 = self.best.get('f1', -np.inf)
         print('current', f1, 'best', best_f1)

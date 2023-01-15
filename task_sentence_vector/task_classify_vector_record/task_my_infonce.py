@@ -6,7 +6,6 @@ import typing
 
 import numpy as np
 import pytorch_lightning
-import scipy
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
@@ -15,18 +14,16 @@ from deep_training.nlp.losses.loss_infonce import InfoNCE
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from tfrecords import TFRecordOptions
 from torch import nn
-from torch.nn import functional as F
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
-# model_base_dir = '/data/torch/bert-base-chinese'
-model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+model_base_dir = '/data/torch/bert-base-chinese'
+#model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -40,12 +37,12 @@ train_info_args = {
     'do_train': True,
     'do_eval': True,
     'do_test': False,
-    # 'train_file': '/data/record/cse_0110/train_pos_neg.record',
-    # 'eval_file': '/data/record/cse_0110/eval.record',
-    # 'label_file': '/data/record/cse_0110/labels_122.txt',
-    'train_file': '/data/nlp/nlp_train_data/clue/tnews/train_pos_neg.record',
-    'eval_file': '/data/nlp/nlp_train_data/clue/tnews/eval.record',
-    'label_file': '/data/nlp/nlp_train_data/clue/tnews/labels.txt',
+    'train_file': '/data/record/cse_0110/train_pos_neg.record',
+    'eval_file': '/data/record/cse_0110/eval.record',
+    'label_file': '/data/record/cse_0110/labels_122.txt',
+    # 'train_file': '/data/nlp/nlp_train_data/clue/tnews/train_pos_neg.record',
+    # 'eval_file': '/data/nlp/nlp_train_data/clue/tnews/eval.record',
+    # 'label_file': '/data/nlp/nlp_train_data/clue/tnews/labels.txt',
     'learning_rate': 3e-5,
     'max_steps': 120000,
     'max_epochs': 1,
@@ -134,8 +131,6 @@ class NN_DataHelper(DataHelper):
     def train_collate_fn(batch):
         state = np.random.get_state()
         np.random.set_state(state)
-
-
         o = {}
         neg_len_list = [4]
         for i, b in enumerate(batch):
@@ -487,7 +482,6 @@ if __name__ == '__main__':
         trainer.fit(model,train_dataloaders=train_datasets)
 
     else:
-
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
         test_datasets = dataHelper.load_dataset(dataHelper.test_files)
         if eval_datasets is not None:
@@ -529,7 +523,4 @@ if __name__ == '__main__':
                                         "pred_ids": [0, 1]
                                         }
                           )
-
-
-
 

@@ -404,7 +404,6 @@ if __name__ == '__main__':
 
     if train_datasets is not None:
         train_datasets = torch_Dataset(train_datasets.limit(20000))
-        train_datasets = torch_Dataset(train_datasets)
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
