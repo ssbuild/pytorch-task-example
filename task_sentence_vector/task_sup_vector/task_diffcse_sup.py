@@ -218,7 +218,7 @@ class NN_DataHelper(DataHelper):
                                 D.append((s1, s2, s3))
                         else:
                             if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
-                                D.append((s1, s2, None))
+                                D.append((s1, s2, s3))
                             else:
                                 D.append((s1, s2, 1))
                                 D.append((s1, s3, 0))
