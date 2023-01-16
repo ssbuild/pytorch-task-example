@@ -59,6 +59,9 @@ train_info_args = {
     'test_max_seq_length': 512,
 }
 
+#cls , pooler , last-avg , first-last-avg , reduce
+pooling = 'reduce'
+
 
 class NN_DataHelper(DataHelper):
     # 切分词
@@ -401,12 +404,15 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(pooling=pooling,config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model,train_dataloaders=train_datasets)
 
     else:
+        #加载权重
+        model = MyTransformer.load_from_checkpoint('./best.pt', pooling=pooling, config=config, model_args=model_args,
+                                                   training_args=training_args)
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
         test_datasets = dataHelper.load_dataset(dataHelper.test_files)
         if eval_datasets is not None:
@@ -435,7 +441,7 @@ if __name__ == '__main__':
             input_names = ["input_ids", "attention_mask"]
             out_names = ["pred_ids"]
 
-            model = MyTransformer.load_from_checkpoint('./best.pt',config=config, model_args=model_args, training_args=training_args)
+            model = MyTransformer.load_from_checkpoint('./best.pt',pooling=pooling,config=config, model_args=model_args, training_args=training_args)
             model.to_onnx('./best.onnx',
                           input_sample=input_sample,
                           verbose=True,
