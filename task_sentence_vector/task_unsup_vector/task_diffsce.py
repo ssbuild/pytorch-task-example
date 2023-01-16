@@ -66,11 +66,12 @@ train_info_args = {
     ##### diffcse 模型参数
     'pooling': 'cls',  # one of [cls , pooler , last-avg , first-last-avg]
     'mlm_probability': 0.15,
+    'encoder_with_mlp': False,
+    'discriminator_with_mlp': True,
     'lambda_weight': 0.05,
     'vector_size': 512,
     'num_encoder_layer': 12,
     'num_discriminator_layer': 6,
-    'num_generator_layer': 6,
     'generator_model_type': 'bert',
     'generator_model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'generator_config_name':   '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
