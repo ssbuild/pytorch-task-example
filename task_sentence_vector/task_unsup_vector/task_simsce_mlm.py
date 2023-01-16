@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+import copy
 import json
 import random
 import typing
 
+import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
@@ -16,6 +18,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser, BertTokenizer
+from fastdatasets.torch_dataset import Dataset as torch_Dataset
 
 train_info_args = {
     'devices':'1',
@@ -96,6 +99,24 @@ class NN_DataHelper(DataHelper):
                         print('read_line', line_no)
                         print(D[-1])
         return D[0:100] if mode == 'train' else D[:10]
+
+    @staticmethod
+    def train_collate_fn(batch):
+        o = {k: [] for k in batch[0][0].keys()}
+        for i, b in enumerate(batch):
+            for sub_b in b:
+                for k in sub_b:
+                    o[k].append(torch.tensor(sub_b[k]))
+        for k in o:
+            o[k] = torch.stack(o[k])
+        max_len = torch.max(o.pop('seqlen'))
+        o['input_ids'] = o['input_ids'][:, :max_len]
+        o['attention_mask'] = o['attention_mask'][:, :max_len]
+        if 'token_type_ids' in o:
+            o['token_type_ids'] = o['token_type_ids'][:, :max_len]
+        o['labels'] = o['labels'][:, :max_len]
+        o['weight'] = o['weight'][:, :max_len]
+        return o
 
     @staticmethod
     def collate_fn(batch):
@@ -231,16 +252,17 @@ if __name__== '__main__':
                                                                        shuffle=False,
                                                                        mode='test'))
 
-    #制作数据集已经打乱，读取不能打乱数据
+
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=False, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
-                                             with_record_iterable_dataset=True)
+                                             with_record_iterable_dataset=True,with_torchdataset=False)
 
     if train_datasets is not None:
-        # 读取不能打乱数据
-        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else False)
+        train_datasets = train_datasets.batch(2).shuffle(-1)
+        train_datasets = torch_Dataset(train_datasets)
+        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size // 2,
+                                    collate_fn=dataHelper.train_collate_fn,
+                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
     
 
     model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
