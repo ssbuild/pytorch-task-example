@@ -39,12 +39,12 @@ train_info_args = {
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
-    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
-    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
-    'train_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
-    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
-    'test_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    # 'train_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
+    # 'eval_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
+    # 'test_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
@@ -222,7 +222,7 @@ class NN_DataHelper(DataHelper):
         o = {k: torch.repeat_interleave(v, 2, dim=0) for k, v in o.items()}
         mlm_input_ids, mlm_labels = mask_tokens(NN_DataHelper.tokenizer, NN_DataHelper.diffcse_args.mlm_probability,o['input_ids'])
         o['mlm_input_ids'] = mlm_input_ids
-        o['mlm_labels'] = mlm_labels
+        # o['mlm_labels'] = mlm_labels
         o = {k: torch.reshape(v,(-1,2,v.size(1))) for k, v in o.items()}
         return o
 
