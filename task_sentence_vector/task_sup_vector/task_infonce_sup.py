@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import copy
+import json
 import logging
 import os.path
 import typing
@@ -31,17 +32,21 @@ train_info_args = {
     'model_name_or_path': model_base_dir,
     'tokenizer_name': model_base_dir,
     'config_name': os.path.join(model_base_dir, 'config.json'),
-    # 语料已经制作好，不需要在转换
-    'convert_file': False,
     'do_train': True,
     'do_eval': True,
     'do_test': False,
-    'train_file': '/data/record/cse_0110/train_pos_neg.record',
-    'eval_file': '/data/record/cse_0110/eval.record',
-    'label_file': '/data/record/cse_0110/labels_122.txt',
-    # 'train_file': '/data/nlp/nlp_train_data/clue/tnews/train_pos_neg.record',
-    # 'eval_file': '/data/nlp/nlp_train_data/clue/tnews/eval.record',
-    # 'label_file': '/data/nlp/nlp_train_data/clue/tnews/labels.txt',
+     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
     'learning_rate': 3e-5,
     'max_steps': 120000,
     'max_epochs': 1,
@@ -61,101 +66,110 @@ train_info_args = {
 
 
 class NN_DataHelper(DataHelper):
+    index = 1
+
+    def on_data_ready(self):
+        self.index = -1
+
     # 切分词
     def on_data_process(self, data: typing.Any, user_data: tuple):
+        self.index += 1
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-        sentence, label_str = data
+        # 训练集(sentence1, sentence2, sentence3)  验证集(sentence1, sentence2, labelstr)
+        sentence1, sentence2, sentence3_or_labelstr = data
+        if mode == 'train':
+            o_list = []
+            for sentence in [sentence1, sentence2, sentence3_or_labelstr]:
+                if sentence is None:  # 无负样本
+                    continue
+                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,
+                              return_token_type_ids=False)
+                for k in o:
+                    o[k] = np.asarray(o[k], dtype=np.int32)
+                seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
+                pad_len = max_seq_length - seqlen
+                if pad_len > 0:
+                    pad_val = tokenizer.pad_token_id
+                    o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
+                    o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
+                d = {
+                    'input_ids': o['input_ids'],
+                    'attention_mask': o['attention_mask'],
+                    'seqlen': seqlen
+                }
+                o_list.append(copy.deepcopy(d))
 
-        o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
-        input_ids = np.asarray(o['input_ids'], dtype=np.int64)
-        attention_mask = np.asarray(o['attention_mask'], dtype=np.int64)
-
-
-        seqlen = np.asarray(len(input_ids), dtype=np.int64)
-        pad_len = max_seq_length - len(input_ids)
-        if pad_len > 0:
-            pad_val = tokenizer.pad_token_id
-            input_ids = np.pad(input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-            attention_mask = np.pad(attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
-        d = {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'seqlen': seqlen
-        }
-        if label_str is not None:
-            labels = np.asarray(label2id[label_str], dtype=np.int64)
-            d['labels'] = labels
-        return d
+            seqlen = np.max([o.pop('seqlen') for o in o_list])
+            d = {k: np.stack([o_list[0][k], o_list[1][k]], axis=0) for k in o_list[0].keys()}
+            d['seqlen'] = np.asarray(seqlen, dtype=np.int32)
+            return d
+        # 验证
+        else:
+            ds = {}
+            for sentence in [sentence1, sentence2]:
+                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,
+                              return_token_type_ids=False)
+                for k in o:
+                    o[k] = np.asarray(o[k], dtype=np.int32)
+                seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
+                pad_len = max_seq_length - seqlen
+                if pad_len > 0:
+                    pad_val = tokenizer.pad_token_id
+                    o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
+                    o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
+                d = {
+                    'input_ids': o['input_ids'],
+                    'attention_mask': o['attention_mask'],
+                    'seqlen': seqlen
+                }
+                if 'input_ids' not in ds:
+                    ds = d
+                else:
+                    for k, v in d.items():
+                        ds[k + '2'] = v
+            if sentence3_or_labelstr is not None:
+                labels = np.asarray(int(sentence3_or_labelstr), dtype=np.int32)
+                ds['labels'] = labels
+            return ds
 
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
-        file = files[0]
-        with open(file, mode='r', encoding='utf-8') as f:
-            lines = f.readlines()
-        labels = []
-        for line in lines:
-            line = line.replace('\r\n', '').replace('\n', '')
-            if not line:
-                continue
-            labels.append(line)
-        labels = list(set(labels))
-        labels = sorted(labels)
-        label2id = {l: i for i, l in enumerate(labels)}
-        id2label = {i: l for i, l in enumerate(labels)}
-        self.label2id = label2id
-        self.id2label = id2label
-        return self.label2id, self.id2label
+        return None,None
 
-    @staticmethod
-    def train_collate_fn(batch):
-        state = np.random.get_state()
-        np.random.set_state(state)
-        o = {}
-        neg_len_list = [4]
-        for i, b in enumerate(batch):
-            neg_len_list.append(b['neg_len'])
+    # 读取文件
+    def on_get_corpus(self, files: typing.List, mode: str):
+        D = []
+        for filename in files:
+            with open(filename, mode='r', encoding='utf-8') as f:
+                lines = f.readlines()
+                if filename.endswith('.json'):
+                    for line in lines:
+                        jd = json.loads(line)
+                        if not jd:
+                            continue
+                        if mode == 'train':
+                            if 'sentence3' in jd:
+                                D.append((jd['sentence1'], jd['sentence2'], jd['sentence3']))
+                            else:
+                                D.append((jd['sentence1'], jd['sentence2'], None))
+                        else:
+                            D.append((jd['sentence1'], jd['sentence2'], jd['label']))
+                else:
+                    for line in lines:
+                        line = line.replace('\r\n', '').replace('\n', '')
+                        s1, s2, s3 = line.split('\t', 2)
+                        if mode == 'train':
+                            s3: str
+                            if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
+                                D.append((s1, s2, None))
+                            else:
+                                D.append((s1, s2, s3))
+                        else:
+                            D.append((s1, s2, 1))
+                            D.append((s1, s3, 0))
 
-        max_neg_len = np.min(neg_len_list)
-        for i, b in enumerate(batch):
-            b = copy.copy(b)
-            b_new = {}
-            b.pop('id', None)
-            pos_len = np.squeeze(b.pop('pos_len'))
-            neg_len = np.squeeze(b.pop('neg_len'))
-
-            pos = np.random.choice(list(range(pos_len)), replace=False, size=2)
-            neg = np.random.choice(list(range(neg_len)), replace=False, size=max_neg_len)
-
-            seqlens = []
-            b_new['input_ids'] = []
-            b_new['attention_mask'] = []
-            for kid in pos:
-                b_new['input_ids'].append(b['input_ids_pos{}'.format(kid)])
-                b_new['attention_mask'].append(b['attention_mask_pos{}'.format(kid)])
-                seqlens.append(b['seqlen_pos{}'.format(kid)])
-
-            for kid in neg:
-                b_new['input_ids'].append(b['input_ids_neg{}'.format(kid)])
-                b_new['attention_mask'].append(b['attention_mask_neg{}'.format(kid)])
-                seqlens.append(b['seqlen_neg{}'.format(kid)])
-
-            b_new['input_ids'] = np.stack(b_new['input_ids'], axis=0)
-            b_new['attention_mask'] = np.stack(b_new['attention_mask'], axis=0)
-            b_new['seqlen'] = np.asarray(np.max(seqlens), dtype=np.int32)
-            if i == 0:
-                for k in b_new:
-                    o[k] = [torch.tensor(b_new[k])]
-            else:
-                for k in b_new:
-                    o[k].append(torch.tensor(b_new[k]))
-        for k in o:
-            o[k] = torch.stack(o[k])
-
-        max_len = torch.max(o.pop('seqlen'))
-        o['input_ids'] = o['input_ids'][:, :, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :, :max_len]
-        return o
+        return D
 
     @staticmethod
     def collate_fn(batch):
@@ -169,13 +183,13 @@ class NN_DataHelper(DataHelper):
                     o[k].append(torch.tensor(b[k]))
         for k in o:
             o[k] = torch.stack(o[k])
-
-        o.pop('id', None)
         max_len = torch.max(o.pop('seqlen'))
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
-        if 'token_type_ids' in o:
-            o['token_type_ids'] = o['token_type_ids'][:, :max_len]
+        if 'seqlen2' in o:
+            max_len = torch.max(o.pop('seqlen2'))
+            o['input_ids2'] = o['input_ids2'][:, :max_len]
+            o['attention_mask2'] = o['attention_mask2'][:, :max_len]
         return o
 
 
@@ -395,10 +409,12 @@ if __name__ == '__main__':
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
-                                             with_record_iterable_dataset=True)
+                                             with_record_iterable_dataset=False,
+                                             with_load_memory=True, with_torchdataset=True)
+
     if train_datasets is not None:
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.train_collate_fn,
+                                    collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
