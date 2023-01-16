@@ -33,14 +33,14 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': True,
-    'train_file': '/data/nlp/nlp_train_data/senteval_cn/nli_hard_neg/nli_train.csv',
-    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/nli_hard_neg/nli_dev.csv',
+    # 'train_file': '/data/nlp/nlp_train_data/senteval_cn/nli_hard_neg/nli_train.csv',
+    # 'eval_file': '/data/nlp/nlp_train_data/senteval_cn/nli_hard_neg/nli_dev.csv',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
-    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
-    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
@@ -209,16 +209,19 @@ class NN_DataHelper(DataHelper):
                 else:
                     for line in lines:
                         line = line.replace('\r\n', '').replace('\n', '')
+                        s3: str
                         s1, s2, s3 = line.split('\t', 2)
                         if mode == 'train':
-                            s3: str
                             if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
                                 D.append((s1, s2, None))
                             else:
                                 D.append((s1, s2, s3))
                         else:
-                            D.append((s1, s2, 1))
-                            D.append((s1, s3, 0))
+                            if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
+                                D.append((s1, s2, None))
+                            else:
+                                D.append((s1, s2, 1))
+                                D.append((s1, s3, 0))
 
         return D
 

@@ -38,12 +38,12 @@ train_info_args = {
      # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
-    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
-    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
-    'train_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
-    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
-    'test_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
+    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
+    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
@@ -162,16 +162,19 @@ class NN_DataHelper(DataHelper):
                 else:
                     for line in lines:
                         line = line.replace('\r\n', '').replace('\n', '')
+                        s3: str
                         s1, s2, s3 = line.split('\t', 2)
                         if mode == 'train':
-                            s3: str
                             if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
                                 D.append((s1, s2, None))
                             else:
                                 D.append((s1, s2, s3))
                         else:
-                            D.append((s1, s2, 1))
-                            D.append((s1, s3, 0))
+                            if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
+                                D.append((s1, s2, None))
+                            else:
+                                D.append((s1, s2, 1))
+                                D.append((s1, s3, 0))
 
         return D
 
@@ -278,79 +281,41 @@ class MyTransformer(TransformerForInfoNce, pytorch_lightning.LightningModule, wi
 
 
 
-from fastdatasets.torch_dataset import Dataset as torch_Dataset
-from fastdatasets import record
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
-    def __init__(self,*args,**kwargs):
-        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         pl_module: MyTransformer
-        options = TFRecordOptions(compression_type='GZIP')
-        #当前设备
-        device = torch.device('cuda:{}'.format(trainer.global_rank))
-        data_dir = os.path.dirname(data_args.eval_file[0])
-        eval_pos_neg_cache_file = os.path.join(data_dir, 'eval_pos_neg.record.cache')
-        # 缓存文件
-        if os.path.exists(eval_pos_neg_cache_file):
-            eval_datasets_pos_neg = record.load_dataset.RandomDataset(eval_pos_neg_cache_file,
-                                                                      options=options).parse_from_numpy_writer()
-            pos_data, neg_data = [], []
-            for o in eval_datasets_pos_neg:
-                obj_list = pos_data if np.squeeze(o.pop('positive')) > 0 else neg_data
-                keys1, keys2 = [k for k in o if not k.endswith('2')], [k for k in o if k.endswith('2')]
-                d1 = {k: o[k] for k in keys1}
-                d2 = {k.replace('2', ''): o[k] for k in keys2}
-                obj_list.append((d1,d2))
-            print('pos num', len(pos_data) , 'neg num', len(neg_data) )
-        else:
-            eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-            all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
-            map_data = {}
-            for d in all_data:
-                label = np.squeeze(d['labels']).tolist()
-                if label not in map_data:
-                    map_data[label] = []
-                map_data[label].append(d)
-            pos_data, neg_data = generate_pair_example(map_data)
-            # 生成缓存文件
-            f_out = record.NumpyWriter(eval_pos_neg_cache_file, options=options)
-            for pair in pos_data:
-                o = copy.copy(pair[0])
-                for k, v in pair[1].items():
-                    o[k + '2'] = v
-                o['positive'] = np.asarray(1, dtype=np.int32)
-                f_out.write(o)
-            for pair in neg_data:
-                o = copy.copy(pair[0])
-                for k, v in pair[1].items():
-                    o[k + '2'] = v
-                o['positive'] = np.asarray(0, dtype=np.int32)
-                f_out.write(o)
-            f_out.close()
 
-        a_data = [_[0] for _ in pos_data + neg_data]
-        b_data = [_[1] for _ in pos_data + neg_data]
-        labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
-        t_data = a_data + b_data
-        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-        vecs = []
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data)//training_args.eval_batch_size,desc='evalute'):
+        # 当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+
+        a_vecs, b_vecs, labels = [], [], []
+        for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
-            o = pl_module.validation_step(batch,i)
-            b_logits, _ = o['outputs']
+            o = pl_module.validation_step(batch, i)
+            a_logits, b_logits, b_labels = o['outputs']
             for j in range(len(b_logits)):
-                logit = np.asarray(b_logits[j], dtype=np.float32)
-                vecs.append(logit)
+                logit1 = np.asarray(a_logits[j], dtype=np.float32)
+                logit2 = np.asarray(b_logits[j], dtype=np.float32)
+                label = np.asarray(b_labels[j], dtype=np.int32)
 
-        a_vecs = np.stack(vecs[:len(a_data)],axis=0)
-        b_vecs = np.stack(vecs[len(a_data):],axis=0)
+                a_vecs.append(logit1)
+                b_vecs.append(logit2)
+                labels.append(label)
 
-        corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
+        a_vecs = np.stack(a_vecs, axis=0)
+        b_vecs = np.stack(b_vecs, axis=0)
+        labels = np.stack(labels, axis=0)
+
+        corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
         f1 = corrcoef
         best_f1 = self.best.get('f1',-np.inf)
         print('current', f1, 'best', best_f1)
