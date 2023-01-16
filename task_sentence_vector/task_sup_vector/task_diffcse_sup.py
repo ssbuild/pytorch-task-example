@@ -241,8 +241,12 @@ class NN_DataHelper(DataHelper):
         o['input_ids'] = o['input_ids'][:,:, :max_len]
         o['attention_mask'] = o['attention_mask'][:,:, :max_len]
 
-        mlm_input_ids, mlm_labels = mask_tokens(NN_DataHelper.tokenizer, NN_DataHelper.diffcse_args.mlm_probability,o['input_ids'])
-        o['mlm_input_ids'] = mlm_input_ids
+        input_ids = o['input_ids']
+        bs,n,s = input_ids.size()
+        input_ids = torch.reshape(o['input_ids'],(-1,s))
+
+        mlm_input_ids, mlm_labels = mask_tokens(NN_DataHelper.tokenizer, NN_DataHelper.diffcse_args.mlm_probability,input_ids)
+        o['mlm_input_ids'] = torch.reshape(mlm_input_ids,(bs,n,s))
         # o['mlm_labels'] = mlm_labels
         return o
 
