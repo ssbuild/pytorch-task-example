@@ -17,7 +17,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.losses.contrast import SimcseLoss
-from deep_training.nlp.models.transformer import TransformerModel
+from deep_training.nlp.models.simcse import TransformerForSimcse
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from pytorch_lightning import Trainer
@@ -166,6 +166,24 @@ class NN_DataHelper(DataHelper):
                 D.append((item1,item2,None))
         return D
 
+    @staticmethod
+    def train_collate_fn(batch):
+        o = {}
+        for i, b in enumerate(batch):
+            if i == 0:
+                for k in b:
+                    o[k] = [torch.tensor(b[k])]
+            else:
+                for k in b:
+                    o[k].append(torch.tensor(b[k]))
+        for k in o:
+            o[k] = torch.stack(o[k])
+        max_len = torch.max(o.pop('seqlen'))
+        o['input_ids'] = o['input_ids'][:, :max_len]
+        o['attention_mask'] = o['attention_mask'][:, :max_len]
+        o = {k: torch.repeat_interleave(v, 2, dim=0) for k, v in o.items()}
+        o = {k: torch.reshape(v,(-1,2,v.size(1))) for k, v in o.items()}
+        return o
 
     @staticmethod
     def collate_fn(batch):
@@ -190,65 +208,10 @@ class NN_DataHelper(DataHelper):
 
 
 
-class MyTransformer(TransformerModel, with_pl=True):
+class MyTransformer(TransformerForSimcse, with_pl=True):
     def __init__(self, *args, **kwargs):
-        pooling = kwargs.pop('pooling','cls')
         super(MyTransformer, self).__init__(*args, **kwargs)
-        self.pooling = pooling
-        config = self.config
-        self.sim_head = nn.Linear(config.hidden_size, 512, bias=False)
-        self.loss_fn = SimcseLoss()
 
-
-    def get_model_lr(self):
-        return super(MyTransformer, self).get_model_lr() + [
-            (self.sim_head, self.config.task_specific_params['learning_rate_for_task'])
-        ]
-
-    def forward_for_hidden(self, *args, **batch):
-        outputs = self.model(*args, **batch, output_hidden_states=True, )
-        if self.pooling == 'cls':
-            simcse_logits = outputs[0][:, 0]
-        elif self.pooling == 'pooler':
-            simcse_logits = outputs[1]
-        elif self.pooling == 'last-avg':
-            last = outputs[0].transpose(1, 2)  # [batch, 768, seqlen]
-            simcse_logits = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
-        elif self.pooling == 'first-last-avg':
-            first = outputs[2][1].transpose(1, 2)  # [batch, 768, seqlen]
-            last = outputs[2][-1].transpose(1, 2)  # [batch, 768, seqlen]
-            first_avg = torch.avg_pool1d(first, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
-            last_avg = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
-            avg = torch.cat((first_avg.unsqueeze(1), last_avg.unsqueeze(1)), dim=1)  # [batch, 2, 768]
-            simcse_logits = torch.avg_pool1d(avg.transpose(1, 2), kernel_size=2).squeeze(-1)  # [batch, 768]
-        elif self.pooling == 'reduce':
-            simcse_logits = self.sim_head(outputs[1])
-            simcse_logits = torch.tanh(simcse_logits)
-        else:
-            raise ValueError('not support pooling', self.pooling)
-        return simcse_logits
-
-    def compute_loss(self, *args,**batch) -> tuple:
-        labels: torch.Tensor = batch.pop('labels',None)
-        if self.training:
-            batch = {k: torch.repeat_interleave(v, 2, dim=0) for k, v in batch.items()}
-
-        if labels is not None:
-            inputs = {}
-            for k in list(batch.keys()):
-                if k.endswith('2'):
-                    inputs[k.replace('2', '')] = batch.pop(k)
-        simcse_logits = self.forward_for_hidden(*args,**batch)
-        if self.training:
-            loss = self.loss_fn (simcse_logits)
-            outputs = (loss,)
-        elif labels is not None:
-            simcse_logits2 = self.forward_for_hidden(*args, **inputs)
-            labels = torch.squeeze(labels,dim=-1)
-            outputs = (None,simcse_logits, simcse_logits2,labels)
-        else:
-            outputs = (simcse_logits,)
-        return outputs
 
 def evaluate_sample(a_vecs,b_vecs,labels):
     print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
@@ -367,7 +330,7 @@ if __name__ == '__main__':
         # 随机选出一万训练数据
         train_datasets = torch_Dataset(train_datasets.limit(20000))
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
+                                    collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     # 修改config的dropout系数

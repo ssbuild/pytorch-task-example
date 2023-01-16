@@ -1,25 +1,22 @@
 # -*- coding: utf-8 -*-
-# 参考实现: https://github.com/shuxinyin/SimCSE-Pytorch
-# 这里直接随机选了小于2万条任务数据训练；
-
 import copy
 import json
 import logging
 import random
 import typing
-
-import jieba
 import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.models.esimcse import TransformerForESimcse
+from deep_training.nlp.losses.MultipleNegativesRankingLoss import MultipleNegativesRankingLoss
+from deep_training.nlp.models.simcse import TransformerForSimcse
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from pytorch_lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
+from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
@@ -33,9 +30,6 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': True,
-    # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
-    # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
-    # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
@@ -48,10 +42,10 @@ train_info_args = {
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
-    'max_epochs': 3,
+    'max_epochs': 10,
     'optimizer': 'adamw',
-    'learning_rate':3e-5,
-    'train_batch_size': 20,
+    'learning_rate':1e-5,
+    'train_batch_size': 40,
     'eval_batch_size': 20,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
@@ -60,77 +54,13 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 80,
-    'eval_max_seq_length': 80,
-    'test_max_seq_length': 80,
+    'train_max_seq_length': 64,
+    'eval_max_seq_length': 64,
+    'test_max_seq_length': 64,
 }
 
-#cls , pooler , last-avg , first-last-avg
+#cls , pooler , last-avg , first-last-avg , reduce
 pooling = 'cls'
-data_cut_config = {
-    'qb_size':  4,
-    'dup_rate': 0.15
-}
-
-
-class DataCut(object):
-    #qb_size 为缓存batch_size
-    def __init__(self, tokenizer, qb_size=10, dup_rate=0.15):
-        self.q = []
-        self.qb_size = qb_size
-        self.dup_rate = dup_rate
-        self.tokenizer = tokenizer
-
-    def word_repetition_normal(self, batch_text):
-        dst_text = list()
-        for text in batch_text:
-            actual_len = len(text)
-            dup_len = random.randint(a=0, b=max(
-                2, int(self.dup_rate * actual_len)))
-            dup_word_index = random.sample(
-                list(range(1, actual_len)),  k=min(dup_len, actual_len - 1))
-
-            dup_text = ''
-            for index, word in enumerate(text):
-                dup_text += word
-                if index in dup_word_index:
-                    dup_text += word
-            dst_text.append(dup_text)
-        return dst_text
-
-    def word_repetition_chinese(self, batch_text):
-        ''' span duplicated for chinese
-        '''
-        dst_text = list()
-        for text in batch_text:
-            cut_text = jieba.cut(text, cut_all=False)
-            text = list(cut_text)
-
-            actual_len = len(text)
-            dup_len = random.randint(a=0, b=max(
-                2, int(self.dup_rate * actual_len)))
-            dup_word_index = random.sample(
-                list(range(1, actual_len)), k=min(dup_len, actual_len - 1))
-
-            dup_text = ''
-            for index, word in enumerate(text):
-                dup_text += word
-                if index in dup_word_index:
-                    dup_text += word
-            dst_text.append(dup_text)
-        return dst_text
-
-    def cache_negative_samples(self, batch) -> typing.Optional[typing.Dict]:
-        negative_samples = None
-        if len(self.q) > 0:
-            negative_samples = self.q[:self.qb_size]
-            # print("size of negative_samples", len(negative_samples))
-
-        if len(self.q) + 1 >= self.qb_size:
-            self.q.pop(0)
-        self.q.append(batch)
-        return negative_samples
-
 
 
 class NN_DataHelper(DataHelper):
@@ -143,31 +73,34 @@ class NN_DataHelper(DataHelper):
     def on_data_process(self, data: typing.Any, user_data: tuple):
         self.index += 1
         tokenizer: BertTokenizer
-        data_cut: DataCut
-        tokenizer,data_cut, max_seq_length, do_lower_case, label2id, mode = user_data
-        sentence1, sentence2, label_str = data
+        tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
+        #训练集(sentence1, sentence2, sentence3)  验证集(sentence1, sentence2, labelstr)
+        sentence1, sentence2, sentence3_or_labelstr = data
         if mode == 'train':
-            ds = []
-            sentence_poses = data_cut.word_repetition_normal([sentence1, sentence2])
-            for sentence_item in [(sentence1,sentence_poses[0]), (sentence2,sentence_poses[1])]:
-                o_list = []
-                for sentence in sentence_item:
-                    o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
-                    for k in o:
-                        o[k] = np.asarray(o[k],dtype=np.int32)
-                    seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
-                    o['seqlen'] = seqlen
-                    pad_len = max_seq_length - seqlen
-                    if pad_len > 0:
-                        pad_val = tokenizer.pad_token_id
-                        o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len),constant_values=(pad_val, pad_val))
-                        o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len),constant_values=(0, 0))
-                    o_list.append(o)
-                seqlen = np.max([o.pop('seqlen') for o in o_list])
-                d = {k: np.stack([o_list[0][k],o_list[1][k]],axis=0) for k in o_list[0].keys()}
-                d['seqlen'] =  np.asarray(seqlen, dtype=np.int32)
-                ds.append(d)
-            return ds
+            o_list = []
+            for sentence in [sentence1,sentence2,sentence3_or_labelstr]:
+                if sentence is None:#无负样本
+                    continue
+                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
+                for k in o:
+                    o[k] = np.asarray(o[k],dtype=np.int32)
+                seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
+                pad_len = max_seq_length - seqlen
+                if pad_len > 0:
+                    pad_val = tokenizer.pad_token_id
+                    o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
+                    o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
+                d = {
+                    'input_ids': o['input_ids'],
+                    'attention_mask': o['attention_mask'],
+                    'seqlen': seqlen
+                }
+                o_list.append(copy.deepcopy(d))
+
+            seqlen = np.max([o.pop('seqlen') for o in o_list])
+            d = {k: np.stack([o_list[0][k], o_list[1][k]], axis=0) for k in o_list[0].keys()}
+            d['seqlen'] = np.asarray(seqlen, dtype=np.int32)
+            return d
         #验证
         else:
             ds = {}
@@ -191,8 +124,8 @@ class NN_DataHelper(DataHelper):
                 else:
                     for k,v in d.items():
                         ds[k+'2'] = v
-            if label_str is not None:
-                labels = np.asarray(int(label_str), dtype=np.int32)
+            if sentence3_or_labelstr is not None:
+                labels = np.asarray(int(sentence3_or_labelstr), dtype=np.int32)
                 ds['labels'] = labels
             return ds
 
@@ -212,51 +145,29 @@ class NN_DataHelper(DataHelper):
                         jd = json.loads(line)
                         if not jd:
                             continue
-                        D.append((jd['sentence1'], jd['sentence2'], jd.get('label', None)))
+                        if mode == 'train':
+                            if 'sentence3' in jd:
+                                D.append((jd['sentence1'], jd['sentence2'], jd['sentence3']))
+                            else:
+                                D.append((jd['sentence1'], jd['sentence2'], None))
+                        else:
+                            D.append((jd['sentence1'], jd['sentence2'], jd['label']))
                 else:
                     for line in lines:
                         line = line.replace('\r\n', '').replace('\n', '')
-                        s1, s2, l = line.split('\t', 2)
-                        D.append((s1, s2, l))
-        # 训练数据重排序
-        if mode == 'train':
-            tmp = []
-            for item in D:
-                tmp.append(item[0])
-                tmp.append(item[1])
-            random.shuffle(tmp)
-            D.clear()
-            for item1,item2 in zip(tmp[::2], tmp[1::2]):
-                D.append((item1,item2,None))
+                        s1, s2, s3 = line.split('\t', 2)
+                        if mode == 'train':
+                            s3:str
+                            if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
+                                D.append((s1, s2, None))
+                            else:
+                                D.append((s1, s2, s3))
+                        else:
+                            D.append((s1, s2, 1))
+                            D.append((s1, s3, 0))
+
         return D
 
-
-
-
-    @staticmethod
-    def train_collate_fn(batch):
-        o = {}
-        for i, b in enumerate(batch):
-            if i == 0:
-                for k in b:
-                    o[k] = [torch.tensor(b[k])]
-            else:
-                for k in b:
-                    o[k].append(torch.tensor(b[k]))
-        for k in o:
-            o[k] = torch.stack(o[k])
-        max_len = torch.max(o.pop('seqlen'))
-        o['input_ids'] = o['input_ids'][:, :,:max_len]
-        o['attention_mask'] = o['attention_mask'][:, :,:max_len]
-        #产生负样本
-        batch_neg_samples = NN_DataHelper.data_cut.cache_negative_samples({k: torch.clone(v[:,0]) for k,v in o.items()})
-
-        o['neg_num'] = torch.tensor(len(batch_neg_samples) if batch_neg_samples is not None else 0, dtype=torch.int32)
-        if batch_neg_samples is not None:
-            for i, samples in enumerate(batch_neg_samples):
-                for k, v in samples.items():
-                    o[k + str(i)] = v
-        return o
 
     @staticmethod
     def collate_fn(batch):
@@ -280,12 +191,12 @@ class NN_DataHelper(DataHelper):
         return o
 
 
-
-class MyTransformer(TransformerForESimcse, with_pl=True):
+class MyTransformer(TransformerForSimcse, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
-        self.pooling = pooling
-        # config = self.config
+
+
+
 
 def evaluate_sample(a_vecs,b_vecs,labels):
     print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
@@ -342,8 +253,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
-
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1,every_n_train_steps=300 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1,
+                                                  every_n_train_steps=300 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -363,16 +274,13 @@ if __name__ == '__main__':
     tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
                                                                                 data_args)
     rng = random.Random(training_args.seed)
-    data_cut = DataCut(tokenizer,**data_cut_config)
-    #
-    NN_DataHelper.data_cut = data_cut
 
     token_fn_args_dict = {
-        'train': (tokenizer,data_cut, data_args.train_max_seq_length, model_args.do_lower_case, label2id,
+        'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id,
                   'train'),
-        'eval': (tokenizer,data_cut, data_args.eval_max_seq_length, model_args.do_lower_case, label2id,
+        'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id,
                  'eval'),
-        'test': (tokenizer,data_cut, data_args.test_max_seq_length, model_args.do_lower_case, label2id,
+        'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id,
                  'test')
     }
 
@@ -400,13 +308,12 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=False,
-                                             with_load_memory=True,with_torchdataset=False)
+                                             with_load_memory=True,with_torchdataset=True)
 
 
     if train_datasets is not None:
-        train_datasets = torch_Dataset(train_datasets.limit(20000))
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.train_collate_fn,
+                                    collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     # 修改config的dropout系数
