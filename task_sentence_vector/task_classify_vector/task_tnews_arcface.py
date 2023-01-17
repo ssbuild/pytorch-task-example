@@ -41,6 +41,7 @@ train_info_args = {
     'learning_rate': 5e-5,
     'max_epochs': 30,
     'train_batch_size': 80,
+    'eval_batch_size': 40,
     'test_batch_size': 40,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -129,6 +130,12 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
+        if 'seqlen2' in o:
+            max_len = torch.max(o.pop('seqlen2'))
+            o['input_ids2'] = o['input_ids2'][:, :max_len]
+            o['attention_mask2'] = o['attention_mask2'][:, :max_len]
+            if 'token_type_ids2' in o:
+                o['token_type_ids2'] = o['token_type_ids2'][:, :max_len]
         return o
 
 
@@ -197,7 +204,7 @@ def generate_pair_example(all_example_dict: dict):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
+    print('*' * 30,'evaluating...',a_vecs.shape,b_vecs.shape,labels.shape,'pos',np.sum(labels))
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
@@ -249,16 +256,28 @@ class MyTransformer(TransformerModel, with_pl=True):
             raise ValueError('not support pooling', self.pooling)
         return simcse_logits
 
-    def compute_loss(self, *args,**batch) -> tuple:
-        labels: torch.Tensor = batch.pop('labels',None)
-        logits = self.forward_for_hidden(*args,**batch)
-        # logits = F.normalize(logits)
-        if labels is not None:
+    def compute_loss(self, *args, **batch) -> tuple:
+        labels: torch.Tensor = batch.pop('labels', None)
+        if self.model.training:
+            logits = self.forward_for_hidden(*args, **batch)
             labels = torch.squeeze(labels, dim=1)
             metric_logits = self.metric_product(logits, labels)
             loss = self.loss_fn(metric_logits, labels)
             outputs = (loss.mean(), logits, labels)
+        elif labels is not None:
+            inputs = {}
+            for k in list(batch.keys()):
+                if k.endswith('2'):
+                    inputs[k.replace('2', '')] = batch.pop(k)
+            labels = torch.squeeze(labels, dim=1)
+            logits = self.forward_for_hidden(*args, **batch)
+            if inputs:
+                logits2 = self.forward_for_hidden(*args, **inputs)
+                outputs = (None, logits, logits2, labels)
+            else:
+                outputs = (None, logits, labels)
         else:
+            logits = self.forward_for_hidden(*args, **batch)
             outputs = (logits,)
         return outputs
 
@@ -279,19 +298,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         device = torch.device('cuda:{}'.format(trainer.global_rank))
         data_dir = os.path.dirname(data_args.eval_file[0])
         eval_pos_neg_cache_file = os.path.join(data_dir, 'eval_pos_neg.record.cache')
-        # 缓存文件
-        if os.path.exists(eval_pos_neg_cache_file):
-            eval_datasets_pos_neg = record.load_dataset.RandomDataset(eval_pos_neg_cache_file,
-                                                                      options=options).parse_from_numpy_writer()
-            pos_data, neg_data = [], []
-            for o in eval_datasets_pos_neg:
-                obj_list = pos_data if np.squeeze(o.pop('positive')) > 0 else neg_data
-                keys1, keys2 = [k for k in o if not k.endswith('2')], [k for k in o if k.endswith('2')]
-                d1 = {k: o[k] for k in keys1}
-                d2 = {k.replace('2', ''): o[k] for k in keys2}
-                obj_list.append((d1,d2))
-            print('pos num', len(pos_data) , 'neg num', len(neg_data))
-        else:
+        # 生成缓存文件
+        if not os.path.exists(eval_pos_neg_cache_file):
             eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
             all_data = [eval_datasets[i] for i in range(len(eval_datasets))]
             map_data = {}
@@ -303,37 +311,49 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             pos_data, neg_data = generate_pair_example(map_data)
             # 生成缓存文件
             f_out = record.NumpyWriter(eval_pos_neg_cache_file, options=options)
+
+            keep_keys = ['input_ids', 'attention_mask', 'token_type_ids', 'seqlen']
             for pair in pos_data:
+                for o in pair:
+                    for k in list(o.keys()):
+                        if k not in keep_keys:
+                            o.pop(k)
+
                 o = copy.copy(pair[0])
                 for k, v in pair[1].items():
                     o[k + '2'] = v
-                o['positive'] = np.asarray(1, dtype=np.int32)
+                o['labels'] = np.asarray(1, dtype=np.int32)
                 f_out.write(o)
             for pair in neg_data:
+                for o in pair:
+                    for k in list(o.keys()):
+                        if k not in keep_keys:
+                            o.pop(k)
+
                 o = copy.copy(pair[0])
                 for k, v in pair[1].items():
                     o[k + '2'] = v
-                o['positive'] = np.asarray(0, dtype=np.int32)
+                o['labels'] = np.asarray(0, dtype=np.int32)
                 f_out.write(o)
             f_out.close()
 
-        a_data = [_[0] for _ in pos_data + neg_data]
-        b_data = [_[1] for _ in pos_data + neg_data]
-        labels = np.concatenate([np.ones(len(pos_data),dtype=np.int32),np.zeros(len(neg_data),dtype=np.int32)])
-        t_data = a_data + b_data
-        eval_datasets = DataLoader(torch_Dataset(t_data), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-        vecs = []
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(t_data)//training_args.eval_batch_size,desc='evalute'):
+        assert os.path.exists(eval_pos_neg_cache_file)
+        eval_datasets_pos_neg = record.load_dataset.RandomDataset(eval_pos_neg_cache_file,options=options).parse_from_numpy_writer()
+        eval_datasets = DataLoader(torch_Dataset(eval_datasets_pos_neg), batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        a_vecs,b_vecs,labels = [],[],[]
+        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets_pos_neg)//training_args.eval_batch_size,desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch,i)
-            b_logits, _ = o['outputs']
+            a_logits,b_logits, label = o['outputs']
             for j in range(len(b_logits)):
-                logit = np.asarray(b_logits[j], dtype=np.float32)
-                vecs.append(logit)
+                a_vecs.append(np.asarray(a_logits[j], dtype=np.float32))
+                b_vecs.append(np.asarray(b_logits[j], dtype=np.float32))
+                labels.append(np.squeeze(label[j]) if np.ndim(label[j]) > 0 else label[j])
 
-        a_vecs = np.stack(vecs[:len(a_data)],axis=0)
-        b_vecs = np.stack(vecs[len(a_data):],axis=0)
+        a_vecs = np.stack(a_vecs,axis=0)
+        b_vecs = np.stack(b_vecs,axis=0)
+        labels = np.stack(labels, axis=0)
 
         corrcoef = evaluate_sample(a_vecs,b_vecs,labels)
         f1 = corrcoef

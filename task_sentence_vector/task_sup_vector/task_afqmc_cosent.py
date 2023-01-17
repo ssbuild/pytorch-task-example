@@ -138,7 +138,7 @@ class NN_DataHelper(DataHelper):
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating....',a_vecs.shape,b_vecs.shape,labels.shape)
+    print('*' * 30,'evaluating...',a_vecs.shape,b_vecs.shape,labels.shape,'pos',np.sum(labels))
     sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
     print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
     print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
