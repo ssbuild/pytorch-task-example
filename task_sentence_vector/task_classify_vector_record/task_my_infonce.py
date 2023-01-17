@@ -22,7 +22,9 @@ from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 # model_base_dir = '/data/torch/bert-base-chinese'
-model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+# model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
+model_base_dir = '/data/torch/chinese_fake_bert_wwm_ext'
+
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -69,12 +71,9 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
         sentence, label_str = data
-
         o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
         input_ids = np.asarray(o['input_ids'], dtype=np.int64)
         attention_mask = np.asarray(o['attention_mask'], dtype=np.int64)
-
-
         seqlen = np.asarray(len(input_ids), dtype=np.int64)
         pad_len = max_seq_length - len(input_ids)
         if pad_len > 0:

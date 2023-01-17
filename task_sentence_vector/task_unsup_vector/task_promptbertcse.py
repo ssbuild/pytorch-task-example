@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# 1、原论文batch_size=512，这里是batch_size=64（实在跑不起这么壕的batch_size）；
+# 2、原论文的学习率是5e-5，这里是1e-5；
+# 3、原论文的最优dropout比例是0.1，这里是0.3；
+# 4、原论文的无监督SimCSE是在额外数据上训练的，这里直接随机选了1万条任务数据训练；
+# 5、原文无监督训练的时候还带了个MLM任务，这里只有SimCSE训练。
+
 import copy
 import json
 import logging
@@ -10,8 +16,9 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.models.simcse import TransformerForSimcse
+from deep_training.nlp.models.promptbert_cse import TransformerForPromptbertcse,PromptBertcseArguments
 from deep_training.utils.trainer import SimpleModelCheckpoint
+from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from pytorch_lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
@@ -28,19 +35,22 @@ train_info_args = {
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
     'do_eval': True,
+    # 'train_file':'/data/nlp/nlp_train_data/clue/afqmc_public/train.json',
+    # 'eval_file':'/data/nlp/nlp_train_data/clue/afqmc_public/dev.json',
+    # 'test_file':'/data/nlp/nlp_train_data/clue/afqmc_public/test.json',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
     'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
     'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
     'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
-    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
-    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
-    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
+    # 'train_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
+    # 'eval_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
+    # 'test_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
-    'max_epochs': 10,
+    'max_epochs': 1,
     'optimizer': 'adamw',
     'learning_rate':1e-5,
     'train_batch_size': 40,
@@ -52,14 +62,26 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 64,
-    'eval_max_seq_length': 64,
-    'test_max_seq_length': 64,
+    'train_max_seq_length': 80,
+    'eval_max_seq_length': 80,
+    'test_max_seq_length': 80,
+    #模型参数
+    'pooling_with_mlp': False,
 }
 
-#cls , pooler , last-avg , first-last-avg , reduce
-pooling = 'cls'
 
+SENTENCE_TEMPLATE = "*cls*_This_sentence_:_\'*sent_0*\'_means*mask*.*sep+*"
+SENTENCE_TEMPLATE2= "*cls*_This_sentence_:_\"*sent_0*\"_means*mask*.*sep+*"
+
+def process_template(template,mask_token = '[MASK]'):
+    template = template.replace('*mask*', mask_token) \
+        .replace('*sep+*', '') \
+        .replace('*cls*', '').replace('*sent_0*', ' ')
+    template = template.split(' ')
+    return template[0].replace('_', ' '),template[1].replace('_', ' ')
+# This sentence : ' ' means[MASK].
+mask_embedding_sentence_bs,mask_embedding_sentence_es = process_template(SENTENCE_TEMPLATE)
+mask_embedding_sentence_bs2,mask_embedding_sentence_es2 = process_template(SENTENCE_TEMPLATE)
 
 class NN_DataHelper(DataHelper):
     index = 1
@@ -72,38 +94,47 @@ class NN_DataHelper(DataHelper):
         self.index += 1
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
-        #训练集(sentence1, sentence2, sentence3)  验证集(sentence1, sentence2, labelstr)
-        sentence1, sentence2, sentence3_or_labelstr = data
+        sentence1, sentence2, label_str = data
         if mode == 'train':
-            o_list = []
-            for sentence in [sentence1,sentence2,sentence3_or_labelstr]:
-                if sentence is None:#无负样本
-                    continue
-                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
-                for k in o:
-                    o[k] = np.asarray(o[k],dtype=np.int32)
-                seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
-                pad_len = max_seq_length - seqlen
-                if pad_len > 0:
-                    pad_val = tokenizer.pad_token_id
-                    o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
-                    o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
-                d = {
-                    'input_ids': o['input_ids'],
-                    'attention_mask': o['attention_mask'],
-                    'seqlen': seqlen
-                }
-                o_list.append(copy.deepcopy(d))
+            ds = []
+            for sentence in [sentence1, sentence2]:
+                sentence = sentence.replace('[MASK]','')
+                pair = []
+                for sentence, mask_bs, mask_es in [(sentence, mask_embedding_sentence_bs, mask_embedding_sentence_es),
+                                                   (sentence, mask_embedding_sentence_bs2, mask_embedding_sentence_es2)]:
 
-            seqlen = np.max([o.pop('seqlen') for o in o_list])
-            d = {k: np.stack([o_list[0][k], o_list[1][k]], axis=0) for k in o_list[0].keys()}
-            d['seqlen'] = np.asarray(seqlen, dtype=np.int32)
-            return d
+                    o = tokenizer(mask_bs + sentence[:max_seq_length - len(mask_bs) - len(mask_es)] + mask_es, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
+                    for k in o:
+                        o[k] = np.asarray(o[k],dtype=np.int32)
+                    seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
+                    pad_len = max_seq_length - seqlen
+                    if pad_len > 0:
+                        pad_val = tokenizer.pad_token_id
+                        o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
+                        o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
+                    d = {
+                        'input_ids': o['input_ids'],
+                        'attention_mask': o['attention_mask'],
+                        'seqlen': seqlen
+                    }
+                    pair.append(copy.deepcopy(d))
+                seqlen = np.max([p['seqlen'] for p in pair])
+                d = {k:[] for k in pair[0].keys()}
+                for node in pair:
+                    for k,v in node.items():
+                        d[k].append(v)
+                d = {k: np.stack(v,axis=0) for k,v in d.items()}
+                d['seqlen'] = np.asarray(seqlen,dtype=np.int32)
+                ds.append(copy.deepcopy(d))
+            return ds
         #验证
         else:
             ds = {}
-            for sentence in [sentence1, sentence2]:
-                o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
+            sentence1 = sentence1.replace('[MASK]', '')
+            sentence2 = sentence2.replace('[MASK]', '')
+            for sentence,mask_bs,mask_es in [(sentence1,mask_embedding_sentence_bs, mask_embedding_sentence_es),
+                                            (sentence2,mask_embedding_sentence_bs2, mask_embedding_sentence_es2)]:
+                o = tokenizer(mask_bs + sentence[:max_seq_length - len(mask_bs) - len(mask_es)] + mask_es, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
                 for k in o:
                     o[k] = np.asarray(o[k],dtype=np.int32)
                 seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
@@ -122,8 +153,8 @@ class NN_DataHelper(DataHelper):
                 else:
                     for k,v in d.items():
                         ds[k+'2'] = v
-            if sentence3_or_labelstr is not None:
-                labels = np.asarray(int(sentence3_or_labelstr), dtype=np.int32)
+            if label_str is not None:
+                labels = np.asarray(int(label_str), dtype=np.int32)
                 ds['labels'] = labels
             return ds
 
@@ -143,32 +174,40 @@ class NN_DataHelper(DataHelper):
                         jd = json.loads(line)
                         if not jd:
                             continue
-                        if mode == 'train':
-                            if 'sentence3' in jd:
-                                D.append((jd['sentence1'], jd['sentence2'], jd['sentence3']))
-                            else:
-                                D.append((jd['sentence1'], jd['sentence2'], None))
-                        else:
-                            D.append((jd['sentence1'], jd['sentence2'], jd['label']))
+                        D.append((jd['sentence1'], jd['sentence2'], jd.get('label', None)))
                 else:
                     for line in lines:
                         line = line.replace('\r\n', '').replace('\n', '')
-                        s3: str
-                        s1, s2, s3 = line.split('\t', 2)
-                        if mode == 'train':
-                            if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
-                                D.append((s1, s2, None))
-                            else:
-                                D.append((s1, s2, s3))
-                        else:
-                            if s3.isdigit() or s3.isdecimal() or s3.isnumeric():
-                                D.append((s1, s2, s3))
-                            else:
-                                D.append((s1, s2, 1))
-                                D.append((s1, s3, 0))
-
+                        s1, s2, l = line.split('\t', 2)
+                        D.append((s1, s2, l))
+        # 训练数据重排序
+        if mode == 'train':
+            tmp = []
+            for item in D:
+                tmp.append(item[0])
+                tmp.append(item[1])
+            random.shuffle(tmp)
+            D.clear()
+            for item1,item2 in zip(tmp[::2], tmp[1::2]):
+                D.append((item1,item2,None))
         return D
 
+    @staticmethod
+    def train_collate_fn(batch):
+        o = {}
+        for i, b in enumerate(batch):
+            if i == 0:
+                for k in b:
+                    o[k] = [torch.tensor(b[k])]
+            else:
+                for k in b:
+                    o[k].append(torch.tensor(b[k]))
+        for k in o:
+            o[k] = torch.stack(o[k])
+        max_len = torch.max(o.pop('seqlen'))
+        o['input_ids'] = o['input_ids'][:,:, :max_len]
+        o['attention_mask'] = o['attention_mask'][:,:, :max_len]
+        return o
 
     @staticmethod
     def collate_fn(batch):
@@ -192,11 +231,10 @@ class NN_DataHelper(DataHelper):
         return o
 
 
-class MyTransformer(TransformerForSimcse, with_pl=True):
+
+class MyTransformer(TransformerForPromptbertcse, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
-
-
 
 
 def evaluate_sample(a_vecs,b_vecs,labels):
@@ -252,8 +290,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             trainer.save_checkpoint(self.weight_file)
 
 if __name__ == '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_dict(train_info_args)
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,PromptBertcseArguments))
+    model_args, training_args, data_args,promptbertcse_args = parser.parse_dict(train_info_args)
     checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1,
                                                   every_n_train_steps=300 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
@@ -285,6 +323,8 @@ if __name__ == '__main__':
                  'test')
     }
 
+    config.task_specific_params['mask_token_id'] = tokenizer.mask_token_id
+
     # 缓存数据集
     intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
@@ -309,18 +349,20 @@ if __name__ == '__main__':
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=False,
-                                             with_load_memory=True,with_torchdataset=True)
+                                             with_load_memory=True,with_torchdataset=False)
 
 
     if train_datasets is not None:
+        # 随机选出一万训练数据
+        train_datasets = torch_Dataset(train_datasets.limit(20000))
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
+                                    collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     # 修改config的dropout系数
-    # config.attention_probs_dropout_prob = 0.3
-    # config.hidden_dropout_prob = 0.3
-    model = MyTransformer(pooling=pooling,config=config, model_args=model_args, training_args=training_args)
+    config.attention_probs_dropout_prob = 0.3
+    config.hidden_dropout_prob = 0.3
+    model = MyTransformer(promptbertcse_args=promptbertcse_args,config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)

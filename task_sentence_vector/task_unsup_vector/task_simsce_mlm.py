@@ -64,8 +64,9 @@ class NN_DataHelper(DataHelper):
             pos += len(text)
             document_texts.append(text)
         # 返回多个文档
-        document_nodes = []
+        ds = []
         for text in document_texts:
+            pair = []
             for _ in range(2):
                 node = make_mlm_wwm_sample(text,
                                            tokenizer,
@@ -74,8 +75,16 @@ class NN_DataHelper(DataHelper):
                                            do_whole_word_mask,
                                            max_predictions_per_seq,
                                            masked_lm_prob)
-                document_nodes.append(node)
-        return document_nodes
+                pair.append(node)
+            seqlen = np.max([p.pop('seqlen') for p in pair])
+            d = {k: [] for k in pair[0].keys()}
+            for node in pair:
+                for k, v in node.items():
+                    d[k].append(v)
+            d = {k: np.stack(v, axis=0) for k, v in d.items()}
+            d['seqlen'] = np.asarray(seqlen, dtype=np.int32)
+            ds.append(copy.deepcopy(d))
+        return ds
 
     def on_get_corpus(self, files: typing.List, mode: str):
         D = []
@@ -102,14 +111,20 @@ class NN_DataHelper(DataHelper):
 
     @staticmethod
     def train_collate_fn(batch):
-        o = {k: [] for k in batch[0][0].keys()}
+        o = {}
         for i, b in enumerate(batch):
-            for sub_b in b:
-                for k in sub_b:
-                    o[k].append(torch.tensor(sub_b[k]))
+            if i == 0:
+                for k in b:
+                    o[k] = [torch.tensor(b[k])]
+            else:
+                for k in b:
+                    o[k].append(torch.tensor(b[k]))
         for k in o:
             o[k] = torch.stack(o[k])
+
         max_len = torch.max(o.pop('seqlen'))
+        bs,n,s = o['input_ids'].size()
+        o = {k: torch.reshape(v,(-1,s)) for k,v in o.items()}
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
@@ -253,12 +268,11 @@ if __name__== '__main__':
                                                                        mode='test'))
 
 
-    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=False, num_processes=trainer.world_size,
+    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
                                              with_record_iterable_dataset=True,with_torchdataset=False)
 
     if train_datasets is not None:
-        train_datasets = train_datasets.batch(2).shuffle(-1)
         train_datasets = torch_Dataset(train_datasets)
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size // 2,
                                     collate_fn=dataHelper.train_collate_fn,

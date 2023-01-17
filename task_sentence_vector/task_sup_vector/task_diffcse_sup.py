@@ -417,8 +417,8 @@ if __name__ == '__main__':
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     # 修改config的dropout系数
-    config.attention_probs_dropout_prob = 0.3
-    config.hidden_dropout_prob = 0.3
+    # config.attention_probs_dropout_prob = 0.3
+    # config.hidden_dropout_prob = 0.3
     model = MyTransformer(diffcse_args=diffcse_args,generator_config=generator_config,config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
