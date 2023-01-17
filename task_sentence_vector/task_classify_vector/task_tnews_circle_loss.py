@@ -50,6 +50,8 @@ train_info_args = {
     'max_seq_length': 128
 }
 
+#cls , pooler , last-avg , first-last-avg , reduce
+pooling = 'cls'
 
 class NN_DataHelper(DataHelper):
     # 切分词
@@ -415,7 +417,7 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(pooling=pooling,config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
