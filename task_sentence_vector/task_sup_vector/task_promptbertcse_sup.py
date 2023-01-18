@@ -94,37 +94,33 @@ class NN_DataHelper(DataHelper):
 
         mask_embedding_sentence_bs, mask_embedding_sentence_es, mask_embedding_sentence_bs2,mask_embedding_sentence_es2 = self.mask_template
         if mode == 'train':
-            ds = []
-            for sentence in [sentence1, sentence2]:
+            pair = []
+            for sentence,mask_bs, mask_es  in [(sentence1, mask_embedding_sentence_bs, mask_embedding_sentence_es),
+                             (sentence2, mask_embedding_sentence_bs2, mask_embedding_sentence_es2)]:
                 sentence = sentence.replace('[MASK]','')
-                pair = []
-                for sentence, mask_bs, mask_es in [(sentence, mask_embedding_sentence_bs, mask_embedding_sentence_es),
-                                                   (sentence, mask_embedding_sentence_bs2, mask_embedding_sentence_es2)]:
-
-                    o = tokenizer(mask_bs + sentence[:max_seq_length - len(mask_bs) - len(mask_es)] + mask_es, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
-                    for k in o:
-                        o[k] = np.asarray(o[k],dtype=np.int32)
-                    seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
-                    pad_len = max_seq_length - seqlen
-                    if pad_len > 0:
-                        pad_val = tokenizer.pad_token_id
-                        o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
-                        o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
-                    d = {
-                        'input_ids': o['input_ids'],
-                        'attention_mask': o['attention_mask'],
-                        'seqlen': seqlen
-                    }
-                    pair.append(copy.deepcopy(d))
-                seqlen = np.max([p['seqlen'] for p in pair])
-                d = {k:[] for k in pair[0].keys()}
-                for node in pair:
-                    for k,v in node.items():
-                        d[k].append(v)
-                d = {k: np.stack(v,axis=0) for k,v in d.items()}
-                d['seqlen'] = np.asarray(seqlen,dtype=np.int32)
-                ds.append(copy.deepcopy(d))
-            return ds
+                o = tokenizer(mask_bs + sentence[:max_seq_length - len(mask_bs) - len(mask_es)] + mask_es, max_length=max_seq_length, truncation=True, add_special_tokens=True,return_token_type_ids=False)
+                for k in o:
+                    o[k] = np.asarray(o[k],dtype=np.int32)
+                seqlen = np.asarray(len(o['input_ids']), dtype=np.int32)
+                pad_len = max_seq_length - seqlen
+                if pad_len > 0:
+                    pad_val = tokenizer.pad_token_id
+                    o['input_ids'] = np.pad(o['input_ids'], pad_width=(0, pad_len), constant_values=(pad_val, pad_val))
+                    o['attention_mask'] = np.pad(o['attention_mask'], pad_width=(0, pad_len), constant_values=(0, 0))
+                d = {
+                    'input_ids': o['input_ids'],
+                    'attention_mask': o['attention_mask'],
+                    'seqlen': seqlen
+                }
+                pair.append(copy.deepcopy(d))
+            seqlen = np.max([p['seqlen'] for p in pair])
+            d = {k:[] for k in pair[0].keys()}
+            for node in pair:
+                for k,v in node.items():
+                    d[k].append(v)
+            d = {k: np.stack(v,axis=0) for k,v in d.items()}
+            d['seqlen'] = np.asarray(seqlen,dtype=np.int32)
+            return d
         #验证
         else:
             ds = {}
@@ -178,16 +174,6 @@ class NN_DataHelper(DataHelper):
                         line = line.replace('\r\n', '').replace('\n', '')
                         s1, s2, l = line.split('\t', 2)
                         D.append((s1, s2, l))
-        # 训练数据重排序
-        if mode == 'train':
-            tmp = []
-            for item in D:
-                tmp.append(item[0])
-                tmp.append(item[1])
-            random.shuffle(tmp)
-            D.clear()
-            for item1,item2 in zip(tmp[::2], tmp[1::2]):
-                D.append((item1,item2,None))
         return D
 
     @staticmethod
@@ -374,8 +360,7 @@ if __name__ == '__main__':
 
 
     if train_datasets is not None:
-        # 随机选出一万训练数据
-        train_datasets = torch_Dataset(train_datasets.limit(20000))
+        train_datasets = torch_Dataset(train_datasets)
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
