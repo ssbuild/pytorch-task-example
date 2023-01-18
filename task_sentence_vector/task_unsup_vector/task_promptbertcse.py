@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-# 1、原论文batch_size=512，这里是batch_size=64（实在跑不起这么壕的batch_size）；
-# 2、原论文的学习率是5e-5，这里是1e-5；
-# 3、原论文的最优dropout比例是0.1，这里是0.3；
-# 4、原论文的无监督SimCSE是在额外数据上训练的，这里直接随机选了1万条任务数据训练；
-# 5、原文无监督训练的时候还带了个MLM任务，这里只有SimCSE训练。
 
 import copy
 import json
@@ -53,7 +48,7 @@ train_info_args = {
     'max_epochs': 1,
     'optimizer': 'adamw',
     'learning_rate':1e-5,
-    'train_batch_size': 40,
+    'train_batch_size': 30,
     'eval_batch_size': 20,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
@@ -62,26 +57,26 @@ train_info_args = {
     'weight_decay': 0,
     'warmup_steps': 0,
     'output_dir': './output',
-    'train_max_seq_length': 80,
-    'eval_max_seq_length': 80,
-    'test_max_seq_length': 80,
+    'train_max_seq_length': 100,
+    'eval_max_seq_length': 100,
+    'test_max_seq_length': 100,
     #模型参数
-    'pooling_with_mlp': False,
+    'mask_embedding_sentence': True,
+    # 'mask_embedding_sentence_template': "*cls*_This_sentence_:_\'*sent_0*\'_means*mask*.*sep+*",
+    'mask_embedding_sentence_template': "*cls*_这_句_话_:_\'*sent_0*\'_的意思是*mask*.*sep+*",
+    'mask_embedding_sentence_different_template': '',
+    'mask_embedding_sentence_org_mlp': False,
+    'mask_embedding_sentence_delta_freeze': False,
+    'mask_embedding_sentence_autoprompt': False,
+    'mask_embedding_sentence_delta': True,
+    'mask_embedding_sentence_autoprompt_freeze_prompt': False,
+    'mask_embedding_sentence_autoprompt_random_init': False,
 }
 
 
-SENTENCE_TEMPLATE = "*cls*_This_sentence_:_\'*sent_0*\'_means*mask*.*sep+*"
-SENTENCE_TEMPLATE2= "*cls*_This_sentence_:_\"*sent_0*\"_means*mask*.*sep+*"
 
-def process_template(template,mask_token = '[MASK]'):
-    template = template.replace('*mask*', mask_token) \
-        .replace('*sep+*', '') \
-        .replace('*cls*', '').replace('*sent_0*', ' ')
-    template = template.split(' ')
-    return template[0].replace('_', ' '),template[1].replace('_', ' ')
-# This sentence : ' ' means[MASK].
-mask_embedding_sentence_bs,mask_embedding_sentence_es = process_template(SENTENCE_TEMPLATE)
-mask_embedding_sentence_bs2,mask_embedding_sentence_es2 = process_template(SENTENCE_TEMPLATE)
+
+
 
 class NN_DataHelper(DataHelper):
     index = 1
@@ -95,6 +90,8 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
         sentence1, sentence2, label_str = data
+
+        mask_embedding_sentence_bs, mask_embedding_sentence_es, mask_embedding_sentence_bs2,mask_embedding_sentence_es2 = self.mask_template
         if mode == 'train':
             ds = []
             for sentence in [sentence1, sentence2]:
@@ -325,6 +322,29 @@ if __name__ == '__main__':
 
     config.task_specific_params['mask_token_id'] = tokenizer.mask_token_id
 
+
+    def extract_template(template, mask_token='[MASK]'):
+        template = template.replace('*mask*', mask_token) \
+            .replace('*sep+*', '') \
+            .replace('*cls*', '')
+        template = template.split('*sent_0*')
+        return template[0].replace('_', ' '), template[1].replace('_', ' ')
+
+    promptbertcse_args.mask_embedding_sentence_bs, promptbertcse_args.mask_embedding_sentence_es = extract_template(
+        promptbertcse_args.mask_embedding_sentence_template)
+    if len(promptbertcse_args.mask_embedding_sentence_different_template):
+        promptbertcse_args.mask_embedding_sentence_bs2, promptbertcse_args.mask_embedding_sentence_es2 = extract_template(
+            promptbertcse_args.mask_embedding_sentence_different_template)
+    else:
+        promptbertcse_args.mask_embedding_sentence_bs2, promptbertcse_args.mask_embedding_sentence_es2 = promptbertcse_args.mask_embedding_sentence_bs, promptbertcse_args.mask_embedding_sentence_es
+
+
+
+    dataHelper.mask_template = (promptbertcse_args.mask_embedding_sentence_bs,
+                                promptbertcse_args.mask_embedding_sentence_es,
+                                promptbertcse_args.mask_embedding_sentence_bs2,
+                                promptbertcse_args.mask_embedding_sentence_es2)
+
     # 缓存数据集
     intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
@@ -359,10 +379,16 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.train_collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
+
+
     # 修改config的dropout系数
     config.attention_probs_dropout_prob = 0.3
     config.hidden_dropout_prob = 0.3
-    model = MyTransformer(promptbertcse_args=promptbertcse_args,config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(promptbertcse_args=promptbertcse_args,
+                          tokenizer=tokenizer,
+                          config=config,
+                          model_args=model_args,
+                          training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
