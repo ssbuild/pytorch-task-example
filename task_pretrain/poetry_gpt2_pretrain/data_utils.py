@@ -56,8 +56,6 @@ class NN_DataHelper(DataHelper):
         token_type_ids = []
         #每1千首
         for idx, (type, title, paragraphs) in enumerate(sub_list):
-            if type is None:
-                type = ''
             o = tokenizer.encode_plus(text=type + title, text_pair=''.join(paragraphs), max_length=max_seq_length,
                                       truncation=True, return_attention_mask=False)
             input_ids += o['input_ids'][1:-1]
@@ -136,7 +134,7 @@ class NN_DataHelper(DataHelper):
             data_type: str = d['type']
             data_type = data_type.replace('宋词','词').replace('南唐词','词').replace('元曲','曲')
             data_type = data_type.replace('宋','').replace('唐','')
-            type = None
+            type = ''
             if data_type.endswith('诗') and is_format(paragraphs):
                 if len(paragraphs) == 2:
                     if paragraphs[0].find('，'):

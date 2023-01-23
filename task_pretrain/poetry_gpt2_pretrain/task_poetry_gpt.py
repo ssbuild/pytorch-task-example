@@ -50,9 +50,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
 
-
-
-    def generate_text(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule",prefix = '归山吟寄友'):
+    def generate_text(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", prefix):
         pl_module: MyTransformer
 
         # 当前设备
@@ -68,8 +66,13 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         batch = {}
         for i in range(data_args.max_target_length):
             batch.clear()
-            batch['input_ids'] = [o['input_ids'] + gen_ids]
-            batch['token_type_ids'] = [o['token_type_ids'] + [1] * len(gen_ids)]
+
+            if len(gen_ids) == 0:
+                batch['input_ids'] = [o['input_ids']]
+                batch['token_type_ids'] = [o['token_type_ids']]
+            else:
+                batch['input_ids'] = [o['input_ids'] + gen_ids + [tokenizer.sep_token_id]]
+                batch['token_type_ids'] = [o['token_type_ids'] + [1] * (len(gen_ids) + 1)]
 
             for k in batch:
                 batch[k] = torch.tensor(batch[k], dtype=torch.int32)
@@ -83,7 +86,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             gen_ids.append(logits)
             token = tokenizer._convert_id_to_token(logits)
             if token.startswith('##'):
-                token = token.replace('##','')
+                token = token.replace('##', '')
             gen_tokens.append(token)
 
         print('input', prefix)
