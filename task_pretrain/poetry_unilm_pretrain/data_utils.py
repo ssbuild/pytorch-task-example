@@ -58,9 +58,9 @@ class NN_DataHelper(DataHelper):
         for idx,(type,title, paragraphs) in enumerate(sub_list):
             if type is None:
                 type = ''
-            o = tokenizer.encode_plus(text= type + title ,text_pair=''.join(paragraphs), max_length=max_seq_length, truncation=True,return_attention_mask=False,add_special_tokens=False)
-            input_ids += o['input_ids']
-            token_type_ids += o['token_type_ids']
+            o = tokenizer.encode_plus(text= type + title ,text_pair=''.join(paragraphs), max_length=max_seq_length, truncation=True,return_attention_mask=False)
+            input_ids += o['input_ids'][1:-1]
+            token_type_ids += o['token_type_ids'][1:-1]
             if idx != len(sub_list) - 1:
                 input_ids += [tokenizer.sep_token_id]
                 token_type_ids += [1]
