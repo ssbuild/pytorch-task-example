@@ -112,7 +112,8 @@ class NN_DataHelper(DataHelper):
                     length = n
                     continue
                 if n != length:
-                    flag = True
+                    flag = False
+                    break
 
             return flag
 

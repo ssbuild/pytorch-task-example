@@ -95,11 +95,10 @@ class NN_DataHelper(DataHelper):
         #{'author': '徐铉', 'title': '春尽日游后湖赠刘起居', 'paragraphs': ['今朝湖上送春归，万顷澄波照白髭。', '笑折残花劝君酒，金丹成熟是何时。'], 'tones': ['平平平仄仄平平，仄仄平平仄仄平。', '仄仄平平仄平仄，平平平仄仄平平。']}
         sub = []
 
-
         def is_format(paragraphs: typing.List[typing.AnyStr]):
             length = 0
             flag = True
-            for idx,sentence in enumerate(paragraphs):
+            for idx, sentence in enumerate(paragraphs):
                 n = 0
                 for char in sentence:
                     if is_chinese_char(ord(char)):
@@ -108,7 +107,8 @@ class NN_DataHelper(DataHelper):
                     length = n
                     continue
                 if n != length:
-                    flag = True
+                    flag = False
+                    break
 
             return flag
 
