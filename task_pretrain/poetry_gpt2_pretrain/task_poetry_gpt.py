@@ -3,7 +3,7 @@
 import torch
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.models.transformer import TransformerModelForUnilm
+from deep_training.nlp.models.transformer import TransformerForCausalLM
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
@@ -13,15 +13,17 @@ from data_utils import NN_DataHelper
 train_info_args = {
     'devices': 1,
     'data_backend': 'record',
-    'model_type': 'bert',
-    'model_name_or_path':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'tokenizer_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'config_name':'/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
+    'model_type': 'gpt2',
+    # 预训练模型路径 , 从0训练，则置空
+    # 'model_name_or_path': '/data/nlp/pre_models/torch/',
+    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'config_name': './config_gpt2/config.json',
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
     'train_file':'./output/dataset_0-train.record',
     'max_epochs': 10,
+    'train_batch_size':8,
     'eval_batch_size': 2,
     'test_batch_size':2,
     'learning_rate': 5e-5,
@@ -31,21 +33,21 @@ train_info_args = {
     'weight_decay':0,
     'warmup_steps':0,
     'output_dir':'./output',
-    'max_seq_length': 512,
+    'max_seq_length':512,
     'max_target_length':50 #预测最大长度
 }
 
 
-class MyTransformer(TransformerModelForUnilm, with_pl=True):
-    def __init__(self, *args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
+class MyTransformer(TransformerForCausalLM, with_pl=True):
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
 
 
 
 if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
-    # 保存最小loss模型
+    #保存最小loss模型
     checkpoint_callback = SimpleModelCheckpoint(monitor="loss", every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
