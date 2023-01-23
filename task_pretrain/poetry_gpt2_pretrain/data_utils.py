@@ -22,6 +22,17 @@ data_conf = {
         '七绝': '[unused2]',
         '五律': '[unused3]',
         '七律': '[unused4]',
+        '诗': '[unused5]',
+        '词': '[unused6]',
+        '楚辞': '[unused7]',
+        '论语': '[unused8]',
+        '孟学': '[unused9]',
+        '诗经': '[unused10]',
+        '四书五经': '[unused11]',
+        '花间集': '[unused12]',
+        '幽梦影': '[unused13]',
+        '曲': '[unused14]',
+        '对联': '[unused15]',
     }
 }
 
@@ -114,17 +125,18 @@ class NN_DataHelper(DataHelper):
                 if n != length:
                     flag = False
                     break
-
             return flag
 
         special = data_conf['special']
         for i in range(len(dataset)):
             d = dataset[i]
-            title = d['title']
+            title = d.get('title','')
             paragraphs = d['paragraphs']
-            tones = d['tones']
+            data_type: str = d['type']
+            data_type = data_type.replace('宋词','词').replace('南唐词','词').replace('元曲','曲')
+            data_type = data_type.replace('宋','').replace('唐','')
             type = None
-            if is_format(paragraphs):
+            if data_type.endswith('诗') and is_format(paragraphs):
                 if len(paragraphs) == 2:
                     if paragraphs[0].find('，'):
                         length = len(paragraphs[0].split('，')[0])
@@ -139,6 +151,9 @@ class NN_DataHelper(DataHelper):
                             type = special['五律']
                         elif length == 7:
                             type = special['七律']
+            else:
+                type = data_type
+
             # 每1千首为一组
             if len(sub) < 1000:
                 sub.append((type,title,paragraphs))
@@ -180,7 +195,7 @@ if __name__ == '__main__':
         'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
         'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
         'do_train': True,
-        'train_file': '/data/nlp/nlp_train_data/poetry/tangsong.record',
+        'train_file': '/data/nlp/nlp_train_data/poetry/poetry_corpus.record',
         'output_dir': './output',
         'max_seq_length': 512,
     }

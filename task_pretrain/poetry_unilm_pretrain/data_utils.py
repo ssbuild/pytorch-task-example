@@ -22,6 +22,17 @@ data_conf = {
         '七绝': '[unused2]',
         '五律': '[unused3]',
         '七律': '[unused4]',
+        '诗': '[unused5]',
+        '词': '[unused6]',
+        '楚辞': '[unused7]',
+        '论语': '[unused8]',
+        '孟学': '[unused9]',
+        '诗经': '[unused10]',
+        '四书五经': '[unused11]',
+        '花间集': '[unused12]',
+        '幽梦影': '[unused13]',
+        '曲': '[unused14]',
+        '对联': '[unused15]',
     }
 }
 
@@ -80,19 +91,20 @@ class NN_DataHelper(DataHelper):
             print(ds[0])
         return ds
 
-
     # 读取文件
-    def on_get_corpus(self, files:typing.List, mode:str):
+    def on_get_corpus(self, files: typing.List, mode: str):
         D = []
-        dataset = load_dataset.RandomDataset(files, options=RECORD.TFRecordOptions(compression_type='GZIP')).parse_from_numpy_writer()
+        dataset = load_dataset.RandomDataset(files, options=RECORD.TFRecordOptions(
+            compression_type='GZIP')).parse_from_numpy_writer()
 
         def poetry_parser(x):
             x = str(x['node'].tolist(), encoding='utf-8')
             x = json.loads(x)
             return x
+
         dataset = dataset.map(poetry_parser)
-        #单条数据
-        #{'author': '徐铉', 'title': '春尽日游后湖赠刘起居', 'paragraphs': ['今朝湖上送春归，万顷澄波照白髭。', '笑折残花劝君酒，金丹成熟是何时。'], 'tones': ['平平平仄仄平平，仄仄平平仄仄平。', '仄仄平平仄平仄，平平平仄仄平平。']}
+        # 单条数据
+        # {'author': '徐铉', 'title': '春尽日游后湖赠刘起居', 'paragraphs': ['今朝湖上送春归，万顷澄波照白髭。', '笑折残花劝君酒，金丹成熟是何时。'], 'tones': ['平平平仄仄平平，仄仄平平仄仄平。', '仄仄平平仄平仄，平平平仄仄平平。']}
         sub = []
 
         def is_format(paragraphs: typing.List[typing.AnyStr]):
@@ -109,17 +121,18 @@ class NN_DataHelper(DataHelper):
                 if n != length:
                     flag = False
                     break
-
             return flag
 
         special = data_conf['special']
         for i in range(len(dataset)):
             d = dataset[i]
-            title = d['title']
+            title = d.get('title', '')
             paragraphs = d['paragraphs']
-            tones = d['tones']
+            data_type: str = d['type']
+            data_type = data_type.replace('宋词', '词').replace('南唐词', '词').replace('元曲', '曲')
+            data_type = data_type.replace('宋', '').replace('唐', '')
             type = None
-            if is_format(paragraphs):
+            if data_type.endswith('诗') and is_format(paragraphs):
                 if len(paragraphs) == 2:
                     if paragraphs[0].find('，'):
                         length = len(paragraphs[0].split('，')[0])
@@ -134,9 +147,12 @@ class NN_DataHelper(DataHelper):
                             type = special['五律']
                         elif length == 7:
                             type = special['七律']
+            else:
+                type = data_type
+
             # 每1千首为一组
             if len(sub) < 1000:
-                sub.append((type,title,paragraphs))
+                sub.append((type, title, paragraphs))
             else:
                 D.append(copy.deepcopy(sub))
                 sub.clear()
@@ -174,7 +190,7 @@ if __name__ == '__main__':
         'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
         'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
         'do_train': True,
-        'train_file': '/data/nlp/nlp_train_data/poetry/tangsong.record',
+        'train_file': '/data/nlp/nlp_train_data/poetry/poetry_corpus.record',
         'output_dir': './output',
         'max_seq_length': 512,
     }
