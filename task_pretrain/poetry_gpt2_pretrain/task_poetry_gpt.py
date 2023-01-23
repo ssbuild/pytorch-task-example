@@ -7,8 +7,8 @@ from deep_training.nlp.models.transformer import TransformerForCausalLM
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
-from transformers import HfArgumentParser
-from data_utils import NN_DataHelper
+from transformers import HfArgumentParser, BertTokenizer
+from data_utils import NN_DataHelper,data_conf
 
 train_info_args = {
     'devices': 1,
@@ -33,8 +33,8 @@ train_info_args = {
     'weight_decay':0,
     'warmup_steps':0,
     'output_dir':'./output',
-    'max_seq_length':512,
-    'max_target_length':50 #预测最大长度
+    'max_seq_length': 512,
+    'max_target_length': 50 #预测最大长度
 }
 
 
@@ -43,6 +43,66 @@ class MyTransformer(TransformerForCausalLM, with_pl=True):
         super(MyTransformer, self).__init__(*args, **kwargs)
 
 
+
+class MySimpleModelCheckpoint(SimpleModelCheckpoint):
+    def __init__(self, *args, **kwargs):
+        super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
+        self.weight_file = './best.pt'
+
+
+    def generate_text(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule",prefix = '归山吟寄友'):
+        pl_module: MyTransformer
+
+        # 当前设备
+        device = torch.device('cuda:{}'.format(trainer.global_rank))
+
+        self.tokenizer: BertTokenizer
+        tokenizer = self.tokenizer
+        data_args = self.data_args
+
+        # 简易测试生成
+        o = tokenizer.encode_plus(prefix, truncation=True, max_length=512)
+        gen_ids, gen_tokens = [], []
+        batch = {}
+        for i in range(data_args.max_target_length):
+            batch.clear()
+            batch['input_ids'] = [o['input_ids'] + gen_ids]
+            batch['token_type_ids'] = [o['token_type_ids'] + [1] * len(gen_ids)]
+
+            for k in batch:
+                batch[k] = torch.tensor(batch[k], dtype=torch.int32)
+            for k in batch:
+                batch[k] = batch[k].to(device)
+
+            out = pl_module.test_step(batch, 0)
+            logits = out['outputs'][0]
+            logits = np.argmax(logits[:, -1], axis=-1)
+            logits = logits[0]
+            gen_ids.append(logits)
+            token = tokenizer._convert_id_to_token(logits)
+            gen_tokens.append(token)
+
+        print('input', prefix)
+
+        for k in batch:
+            batch[k] = batch[k].cpu()
+
+        print(batch)
+        print('output', ''.join(gen_tokens))
+
+
+    def on_save_model(
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        #保存权重
+        super(MySimpleModelCheckpoint, self).on_save_model(trainer,pl_module)
+        special = data_conf['special']
+        prefixs = [('七律','归山吟寄友'),
+                   ('五绝','钓鱼有感')
+        ]
+        for prefix in prefixs:
+            prefix = special[prefix[0]] + prefix[1]
+            self.generate_text(trainer,pl_module,prefix)
 
 if __name__== '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
@@ -109,6 +169,11 @@ if __name__== '__main__':
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
     else:
+        #加载权重
+        model = MyTransformer.load_from_checkpoint('./best.pt', config=config,
+                                                   model_args=model_args,
+                                                   training_args=training_args)
+
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
         test_datasets = dataHelper.load_dataset(dataHelper.test_files)
         if eval_datasets is not None:
@@ -122,3 +187,29 @@ if __name__== '__main__':
 
         if test_datasets is not None:
             trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+
+        is_convert_onnx = True
+        # 是否转换模型
+        if is_convert_onnx:
+            input_sample = (
+                torch.ones(size=(1, 128), dtype=torch.int64),
+                torch.ones(size=(1, 128), dtype=torch.int64),
+            )
+            model.eval()
+            model.to('cuda')
+            input_names = ["input_ids", "attention_mask"]
+            out_names = ["pred_ids"]
+
+
+            model.to_onnx('./best.onnx',
+                          input_sample=input_sample,
+                          verbose=True,
+                          opset_version=14,
+                          do_constant_folding=True,
+                          input_names=input_names,
+                          output_names=out_names,
+                          dynamic_axes={"input_ids": [0, 1],
+                                        "attention_mask": [0, 1],
+                                        "pred_ids": [0, 1]
+                                        }
+                          )
