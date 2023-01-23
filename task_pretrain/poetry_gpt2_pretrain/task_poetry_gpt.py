@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import numpy as np
 import torch
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
@@ -8,7 +8,8 @@ from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser, BertTokenizer
-from data_utils import NN_DataHelper,data_conf
+
+from data_utils import NN_DataHelper, data_conf
 
 train_info_args = {
     'devices': 1,
@@ -50,6 +51,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         self.weight_file = './best.pt'
 
 
+
     def generate_text(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule",prefix = '归山吟寄友'):
         pl_module: MyTransformer
 
@@ -80,6 +82,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             logits = logits[0]
             gen_ids.append(logits)
             token = tokenizer._convert_id_to_token(logits)
+            if token.startswith('##'):
+                token = token.replace('##','')
             gen_tokens.append(token)
 
         print('input', prefix)
@@ -89,6 +93,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         print(batch)
         print('output', ''.join(gen_tokens))
+
 
 
     def on_save_model(

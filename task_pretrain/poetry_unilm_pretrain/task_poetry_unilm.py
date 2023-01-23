@@ -7,9 +7,9 @@ from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
-from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
-from data_utils import NN_DataHelper,data_conf
+
+from data_utils import NN_DataHelper, data_conf
 
 train_info_args = {
     'devices': 1,
@@ -80,6 +80,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             logits = logits[0]
             gen_ids.append(logits)
             token = tokenizer._convert_id_to_token(logits)
+            if token.startswith('##'):
+                token = token.replace('##','')
             gen_tokens.append(token)
 
         print('input', prefix)
