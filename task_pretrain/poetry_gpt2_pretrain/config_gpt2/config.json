@@ -1,16 +1,17 @@
 {
- "model_type": "gpt2",
+  "model_type": "gpt2",
   "architectures": [
     "GPT2LMHeadModel"
   ],
- "resid_pdrop":0.1,
- "embd_pdrop": 0.1,
- "attn_pdrop":0.1,
+  "return_dict": false,
+  "resid_pdrop":0.1,
+  "embd_pdrop": 0.1,
+  "attn_pdrop":0.1,
   "initializer_range": 0.02,
   "layer_norm_epsilon": 1e-05,
   "n_embd": 768,
   "n_head": 12,
   "n_layer": 12,
-  "n_positions": 1024,
+  "n_positions": 512,
   "vocab_size": 21128
 }

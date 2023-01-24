@@ -35,7 +35,7 @@ train_info_args = {
     'warmup_steps':0,
     'output_dir':'./output',
     'max_seq_length': 512,
-    'max_target_length': 50 #预测最大长度
+    'max_target_length': 100 #预测最大长度
 }
 
 
@@ -89,7 +89,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         for k in batch:
             batch[k] = batch[k].cpu()
 
-        print(batch)
         print('output', ''.join(gen_tokens))
 
 
@@ -101,7 +100,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         super(MySimpleModelCheckpoint, self).on_save_model(trainer,pl_module)
         special = data_conf['special']
         prefixs = [('七律','归山吟寄友'),
-                   ('五绝','钓鱼有感')
+                   ('五绝','钓鱼有感'),
+                   ('对联', '五湖四海')
         ]
         for prefix in prefixs:
             prefix = special[prefix[0]] + prefix[1]
