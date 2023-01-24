@@ -8,3 +8,6 @@ python data_utils.py
 
 ## 训练
 python task_poery_unilm.py
+
+
+## 字典 16448
