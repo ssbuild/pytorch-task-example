@@ -1,4 +1,4 @@
-# 唐宋词数据集
+# 诗词数据集
 https://github.com/ssbuild/poetry_tang
 
 # 使用方法 
