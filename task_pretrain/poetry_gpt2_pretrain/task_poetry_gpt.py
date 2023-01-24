@@ -135,6 +135,9 @@ if __name__== '__main__':
         'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id, 'eval'),
         'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
     }
+    #额外参数
+    checkpoint_callback.tokenizer = tokenizer
+    checkpoint_callback.data_args = data_args
 
     # 缓存数据集
     intermediate_name = data_args.intermediate_name + '_{}'.format(0)
