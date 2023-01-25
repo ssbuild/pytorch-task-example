@@ -33,6 +33,7 @@ data_conf = {
         '幽梦影': '[unused13]',
         '曲': '[unused14]',
         '对联': '[unused15]',
+        '毛泽东选集':'[unused16]',
     }
 }
 
