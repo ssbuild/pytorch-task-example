@@ -106,7 +106,7 @@ class NN_DataHelper(DataHelper):
         input_ids = []
         #每1千首
         for idx, (type, title, paragraphs) in enumerate(sub_list):
-            o = tokenizer.encode_plus(text=type + title, text_pair=''.join(paragraphs), max_length=max_seq_length,
+            o = tokenizer.encode_plus(text=type + title, text_pair=paragraphs, max_length=max_seq_length,
                                       truncation=True, return_attention_mask=False,return_token_type_ids=False)
             input_ids += o['input_ids'][1:-1]
             if idx != len(sub_list) - 1:
@@ -192,6 +192,9 @@ class NN_DataHelper(DataHelper):
                     else:
                         type = data_type
 
+                paragraphs = ''.join(paragraphs)
+                if len(paragraphs) <= 10:
+                    continue
                 # 每1千首为一组
                 if len(sub) < COUNT_PER_GROUP:
                     sub.append((type,title,paragraphs))
