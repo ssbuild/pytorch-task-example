@@ -3,8 +3,7 @@ import numpy as np
 import torch
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.data_helper import load_tokenizer_and_config_with_args
-from deep_training.nlp.losses.lm_loss import LM_loss
-from deep_training.nlp.models.transformer import TransformerForCausalLM
+from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
@@ -15,11 +14,11 @@ from data_utils import NN_DataHelper, data_conf
 train_info_args = {
     'devices': 1,
     'data_backend': 'record',
-    'model_type': 'gpt2',
+    'model_type': 'bert',
     # 预训练模型路径 , 从0训练，则置空
-    # 'model_name_or_path': '/data/nlp/pre_models/torch/',
+    'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'config_name': './config_gpt2/config.json',
+    'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
@@ -30,7 +29,7 @@ train_info_args = {
     'test_batch_size':2,
     'learning_rate': 5e-5,
     'adam_epsilon':1e-8,
-    'gradient_accumulation_steps':1,
+    'gradient_accumulation_steps': 1,
     'max_grad_norm':1.0,
     'weight_decay':0,
     'warmup_steps':0,
@@ -40,22 +39,10 @@ train_info_args = {
 }
 
 
-class MyTransformer(TransformerForCausalLM, with_pl=True):
+class MyTransformer(TransformerModelForUnilm, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
-        self.loss_fct = LM_loss(ignore_index=self.config.pad_token_id)
-    def compute_loss(self, *args, **batch) -> tuple:
-        labels = batch.pop('labels', None)
-        outputs = self.model(*args, **batch)
-        hidden_states = outputs[0]
-        lm_logits = self.model.lm_head(hidden_states)
 
-        if labels is not None:
-            loss = self.loss_fct(lm_logits, labels)
-            outputs = (loss, lm_logits, labels)
-        else:
-            outputs = (lm_logits,)
-        return outputs
 
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
@@ -196,9 +183,7 @@ if __name__== '__main__':
         trainer.fit(model, train_dataloaders=train_datasets)
     else:
         #加载权重
-        model = MyTransformer.load_from_checkpoint('./best.pt', config=config,
-                                                   model_args=model_args,
-                                                   training_args=training_args)
+        model = MyTransformer.load_from_checkpoint('./best.pt', config=config,model_args=model_args,training_args=training_args)
 
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
         test_datasets = dataHelper.load_dataset(dataHelper.test_files)

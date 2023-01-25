@@ -104,18 +104,15 @@ class NN_DataHelper(DataHelper):
 
 
         input_ids = []
-        token_type_ids = []
         #每1千首
         for idx, (type, title, paragraphs) in enumerate(sub_list):
             o = tokenizer.encode_plus(text=type + title, text_pair=''.join(paragraphs), max_length=max_seq_length,
-                                      truncation=True, return_attention_mask=False)
+                                      truncation=True, return_attention_mask=False,return_token_type_ids=False)
             if len(o['input_ids']) <= 4:
                 continue
             input_ids += o['input_ids'][1:-1]
-            token_type_ids += o['token_type_ids'][1:-1]
             if idx != len(sub_list) - 1:
                 input_ids += [tokenizer.sep_token_id]
-                token_type_ids += [1]
 
         stride = data_conf['stride']
 
@@ -123,23 +120,16 @@ class NN_DataHelper(DataHelper):
         ds = []
         while pos < len(input_ids):
             input_ids_ = [tokenizer.cls_token_id] + input_ids[pos: pos + max_seq_length -2] + [tokenizer.sep_token_id]
-            attention_mask_ = [1] * len(input_ids_)
-            token_type_ids_ = [0] + token_type_ids[pos: pos + max_seq_length -2] + [1]
             pos += stride
+            input_ids_ = np.asarray(input_ids_, dtype=np.int32)
             seqlen = np.asarray(len(input_ids_),dtype=np.int32)
+
             pad_len = max_seq_length - seqlen
-            input_ids_=  np.asarray(input_ids_,dtype=np.int32)
-            attention_mask_ = np.asarray(attention_mask_, dtype=np.int32)
-            token_type_ids_ = np.asarray(token_type_ids_, dtype=np.int32)
             if pad_len:
                 pad_val = tokenizer.pad_token_id
                 input_ids_ = np.pad(input_ids_, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-                attention_mask_ = np.pad(attention_mask_, (0, pad_len), 'constant', constant_values=(0, 0))
-                token_type_ids_ = np.pad(token_type_ids_, (0, pad_len), 'constant', constant_values=(0, 0))
             d = {
                 'input_ids': input_ids_,
-                'attention_mask': attention_mask_,
-                'token_type_ids': token_type_ids_,
                 'seqlen': seqlen
             }
             ds.append(d)
@@ -219,16 +209,22 @@ class NN_DataHelper(DataHelper):
             if i == 0:
                 for k in b:
                     o[k] = [torch.tensor(b[k])]
+
             else:
                 for k in b:
                     o[k].append(torch.tensor(b[k]))
         for k in o:
             o[k] = torch.stack(o[k])
 
-        max_len = torch.max(o.pop('seqlen'))
-        o['input_ids'] = o['input_ids'][:, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :max_len]
-        o['token_type_ids'] = o['token_type_ids'][:, :max_len]
+        seqlens = o.pop('seqlen')
+        max_len = torch.max(seqlens)
+        o['input_ids'] = o['input_ids'][:, :max_len].long()
+        token_type_ids = torch.zeros_like(o['input_ids'],dtype=torch.long)
+        for idx,seqlen in enumerate(seqlens):
+            seqlen = seqlen.squeeze(-1).numpy().tolist()
+            s = np.random.randint(2,seqlen-1,dtype=np.int32).tolist()
+            token_type_ids[idx,s:seqlen-1] = 1
+        o['token_type_ids'] = token_type_ids
         o['labels'] = torch.clone(o['input_ids'])
         return o
 
