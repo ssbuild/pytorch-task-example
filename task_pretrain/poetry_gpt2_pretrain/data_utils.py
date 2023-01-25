@@ -109,8 +109,7 @@ class NN_DataHelper(DataHelper):
         for idx, (type, title, paragraphs) in enumerate(sub_list):
             o = tokenizer.encode_plus(text=type + title, text_pair=''.join(paragraphs), max_length=max_seq_length,
                                       truncation=True, return_attention_mask=False)
-            if len(o['input_ids']) <= 4:
-                continue
+
             input_ids += o['input_ids'][1:-1]
             token_type_ids += o['token_type_ids'][1:-1]
             if idx != len(sub_list) - 1:
@@ -126,6 +125,9 @@ class NN_DataHelper(DataHelper):
             attention_mask_ = [1] * len(input_ids_)
             token_type_ids_ = [0] + token_type_ids[pos: pos + max_seq_length -2] + [1]
             pos += stride
+
+            if len(input_ids_) <= 5:
+                continue
             seqlen = np.asarray(len(input_ids_),dtype=np.int32)
             pad_len = max_seq_length - seqlen
             input_ids_=  np.asarray(input_ids_,dtype=np.int32)
