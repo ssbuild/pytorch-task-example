@@ -39,23 +39,24 @@ train_info_args = {
     'max_target_length': 100 #预测最大长度
 }
 
-
-class MyTransformer(TransformerForCausalLM, with_pl=True):
+class MyTransformerLM(TransformerForCausalLM):
     def __init__(self, *args, **kwargs):
-        super(MyTransformer, self).__init__(*args, **kwargs)
+        super(MyTransformerLM, self).__init__(*args, **kwargs)
         self.loss_fct = LM_loss(ignore_index=self.config.pad_token_id)
     def compute_loss(self, *args, **batch) -> tuple:
         labels = batch.pop('labels', None)
-        outputs = self.model(*args, **batch)
-        hidden_states = outputs[0]
-        lm_logits = self.model.model.lm_head(hidden_states)
-
+        lm_logits = self.model(*args, **batch)[0]
         if labels is not None:
             loss = self.loss_fct(lm_logits, labels)
             outputs = (loss, lm_logits, labels)
         else:
             outputs = (lm_logits,)
         return outputs
+
+class MyTransformer(MyTransformerLM, with_pl=True):
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
+
 
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
