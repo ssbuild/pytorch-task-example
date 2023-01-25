@@ -5,6 +5,8 @@
 
 import copy
 import json
+import os
+import random
 import typing
 
 import numpy as np
@@ -12,8 +14,9 @@ import torch
 from deep_training.data_helper import DataHelper, ModelArguments, TrainingArguments, DataArguments, \
     load_tokenizer_and_config_with_args
 from deep_training.utils.func import is_chinese_char
-from fastdatasets.record import load_dataset, RECORD
+from tqdm import tqdm
 from transformers import BertTokenizer, HfArgumentParser
+from fastdatasets.record import load_dataset as Loader, RECORD, WriterObject,gfile
 
 data_conf = {
     'stride': 50,
@@ -23,21 +26,68 @@ data_conf = {
         '五律': '[unused3]',
         '七律': '[unused4]',
         '诗': '[unused5]',
+        '花间集': '[unused6]',
+        '幽梦影': '[unused6]',
         '词': '[unused6]',
+        '论语': '[unused7]',
+        '孟学': '[unused7]',
         '楚辞': '[unused7]',
-        '论语': '[unused8]',
-        '孟学': '[unused9]',
-        '诗经': '[unused10]',
-        '四书五经': '[unused11]',
-        '花间集': '[unused12]',
-        '幽梦影': '[unused13]',
-        '曲': '[unused14]',
-        '对联': '[unused15]',
-        '毛泽东选集':'[unused16]',
+        '诗经': '[unused7]',
+        '四书五经': '[unused7]',
+        '曲': '[unused8]',
+        '对联': '[unused9]',
+        '骂人':'[unused10]',
+        '姓名':'[unused11]',
+        '词语':'[unused12]',
+        '成语':'[unused13]',
+        '歇后语':'[unused14]',
+        '汉字':'[unused15]',
+        "先秦": '[unused16]',
+        "秦": '[unused16]',
+        "汉": '[unused16]',
+        "魏晋": '[unused17]',
+        "魏晋末南北朝初": '[unused17]',
+        "隋": '[unused17]',
+        "隋末唐初": '[unused18]',
+        "唐": '[unused18]',
+        "唐末宋初": '[unused18]',
+        "南北朝": '[unused19]',
+        "宋": '[unused19]',
+        "宋末元初": '[unused19]',
+        "宋末金初": '[unused19]',
+        "辽": '[unused19]',
+        "金": '[unused19]',
+        "金末元初": '[unused20]',
+        "元": '[unused20]',
+        "元末明初": '[unused20]',
+        "明": '[unused21]',
+        "明末清初": '[unused21]',
+        "清": '[unused21]',
+        "清末民国初": '[unused21]',
+        "清末近现代初": '[unused21]',
+        "民国末当代初": '[unused22]',
+        "近现代": '[unused22]',
+        "近现代末当代初": '[unused22]',
+        "当代": '[unused22]',
     }
 }
 
 
+def is_format(paragraphs: typing.List[typing.AnyStr]):
+    length = 0
+    flag = True
+    for idx, sentence in enumerate(paragraphs):
+        n = 0
+        for char in sentence:
+            if is_chinese_char(ord(char)):
+                n += 1
+        if idx == 0:
+            length = n
+            continue
+        if n != length:
+            flag = False
+            break
+    return flag
 
 class NN_DataHelper(DataHelper):
     index = 1
@@ -79,15 +129,18 @@ class NN_DataHelper(DataHelper):
             input_ids_=  np.asarray(input_ids_,dtype=np.int32)
             attention_mask_ = np.asarray(attention_mask_, dtype=np.int32)
             token_type_ids_ = np.asarray(token_type_ids_, dtype=np.int32)
+            labels_ = copy.deepcopy(input_ids_)
             if pad_len:
                 pad_val = tokenizer.pad_token_id
                 input_ids_ = np.pad(input_ids_, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
                 attention_mask_ = np.pad(attention_mask_, (0, pad_len), 'constant', constant_values=(0, 0))
                 token_type_ids_ = np.pad(token_type_ids_, (0, pad_len), 'constant', constant_values=(0, 0))
+                labels_ = np.pad(labels_, (0, pad_len), 'constant', constant_values=(-100, -100))
             d = {
                 'input_ids': input_ids_,
                 'attention_mask': attention_mask_,
                 'token_type_ids': token_type_ids_,
+                'labels': labels_,
                 'seqlen': seqlen
             }
             ds.append(d)
@@ -99,69 +152,60 @@ class NN_DataHelper(DataHelper):
     # 读取文件
     def on_get_corpus(self, files:typing.List, mode:str):
         D = []
-        dataset = load_dataset.RandomDataset(files, options=RECORD.TFRecordOptions(compression_type='GZIP')).parse_from_numpy_writer()
 
         def poetry_parser(x):
             x = str(x['node'].tolist(), encoding='utf-8')
             x = json.loads(x)
             return x
-        dataset = dataset.map(poetry_parser)
-        #单条数据
-        #{'author': '徐铉', 'title': '春尽日游后湖赠刘起居', 'paragraphs': ['今朝湖上送春归，万顷澄波照白髭。', '笑折残花劝君酒，金丹成熟是何时。'], 'tones': ['平平平仄仄平平，仄仄平平仄仄平。', '仄仄平平仄平仄，平平平仄仄平平。']}
-        sub = []
 
+        # 单条数据
+        # {'author': '徐铉', 'title': '春尽日游后湖赠刘起居', 'paragraphs': ['今朝湖上送春归，万顷澄波照白髭。', '笑折残花劝君酒，金丹成熟是何时。'], 'tones': ['平平平仄仄平平，仄仄平平仄仄平。', '仄仄平平仄平仄，平平平仄仄平平。']}
 
-        def is_format(paragraphs: typing.List[typing.AnyStr]):
-            length = 0
-            flag = True
-            for idx,sentence in enumerate(paragraphs):
-                n = 0
-                for char in sentence:
-                    if is_chinese_char(ord(char)):
-                        n += 1
-                if idx == 0:
-                    length = n
-                    continue
-                if n != length:
-                    flag = False
-                    break
-            return flag
+        for file in files:
+            dataset = Loader.RandomDataset(file, options=RECORD.TFRecordOptions(compression_type='GZIP')).parse_from_numpy_writer()
+            dataset = dataset.map(poetry_parser)
 
-        special = data_conf['special']
-        for i in range(len(dataset)):
-            d = dataset[i]
-            title = d.get('title','')
-            paragraphs = d['paragraphs']
-            data_type: str = d['type']
-            data_type = data_type.replace('宋词','词').replace('南唐词','词').replace('元曲','曲')
-            data_type = data_type.replace('宋','').replace('唐','')
-            type = ''
-            if data_type.endswith('诗') and is_format(paragraphs):
-                if len(paragraphs) == 2:
-                    if paragraphs[0].find('，'):
-                        length = len(paragraphs[0].split('，')[0])
-                        if length == 5:
-                            type = special['五绝']
-                        elif length == 7:
-                            type = special['七绝']
-                elif len(paragraphs) == 4:
-                    if paragraphs[0].find('，'):
-                        length = len(paragraphs[0].split('，')[0])
-                        if length == 5:
-                            type = special['五律']
-                        elif length == 7:
-                            type = special['七律']
-            else:
-                type = data_type
+            basename = os.path.basename(file)
+            if basename == 'poetry_85w_part1.record': #数据重合
+                continue
+            sub = []
+            special = data_conf['special']
+            for i in range(len(dataset)):
+                d = dataset[i]
+                title = d.get('title','')
+                paragraphs = d['paragraphs']
+                data_type: str = d['type']
+                type = special.get(data_type,None)
+                if type is None:
+                    data_type = data_type.replace('宋词', '词').replace('南唐词', '词').replace('元曲', '曲')
+                    data_type = data_type.replace('宋', '').replace('唐', '')
+                    type = ''
+                    if data_type.endswith('诗') and is_format(paragraphs):
+                        if len(paragraphs) == 2:
+                            if paragraphs[0].find('，'):
+                                length = len(paragraphs[0].split('，')[0])
+                                if length == 5:
+                                    type = special['五绝']
+                                elif length == 7:
+                                    type = special['七绝']
+                        elif len(paragraphs) == 4:
+                            if paragraphs[0].find('，'):
+                                length = len(paragraphs[0].split('，')[0])
+                                if length == 5:
+                                    type = special['五律']
+                                elif length == 7:
+                                    type = special['七律']
+                    else:
+                        type = data_type
 
-            # 每1千首为一组
-            if len(sub) < 1000:
-                sub.append((type,title,paragraphs))
-            else:
+                # 每1千首为一组
+                if len(sub) < 1000:
+                    sub.append((type,title,paragraphs))
+                else:
+                    D.append(copy.deepcopy(sub))
+                    sub.clear()
+            if sub:
                 D.append(copy.deepcopy(sub))
-                sub.clear()
-        if sub:
-            D.append(copy.deepcopy(sub))
         return D
 
 
@@ -182,11 +226,16 @@ class NN_DataHelper(DataHelper):
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-        o['labels'] = torch.clone(o['input_ids']).long()
+        if 'labels' not in o:
+            o['labels'] = torch.clone(o['input_ids']).long()
+        else:
+            o['labels'] = o['labels'][:, :max_len].long()
         return o
 
 
 if __name__ == '__main__':
+
+    train_files = gfile.glob('/data/nlp/nlp_train_data/poetry/*.record')
     train_info_args = {
         'devices': 1,
         'data_backend': 'record',
@@ -195,10 +244,11 @@ if __name__ == '__main__':
         'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
         'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
         'do_train': True,
-        'train_file': '/data/nlp/nlp_train_data/poetry/poetry_corpus.record',
+        'train_file':  ','.join(train_files),
         'output_dir': './output',
         'max_seq_length': 512,
     }
+
 
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
@@ -233,3 +283,28 @@ if __name__ == '__main__':
                                                                        intermediate_name=intermediate_name,
                                                                        shuffle=False,
                                                                        mode='test'))
+
+
+
+    def shuffle_records(record_filenames, outfile, compression_type='GZIP'):
+        print('shuffle_records record...')
+        options = RECORD.TFRecordOptions(compression_type=compression_type)
+        dataset_reader = Loader.RandomDataset(record_filenames, options=options, with_share_memory=True)
+        data_size = len(dataset_reader)
+        all_example = []
+        for i in tqdm(range(data_size), desc='load records'):
+            serialized = dataset_reader[i]
+            all_example.append(serialized)
+        dataset_reader.close()
+
+        shuffle_idx = list(range(data_size))
+        random.shuffle(shuffle_idx)
+        writer = WriterObject(outfile,options=options)
+        for i in tqdm(shuffle_idx, desc='shuffle record'):
+            example = all_example[i]
+            writer.write(example)
+        writer.close()
+
+
+    #再次打乱数据
+    shuffle_records(dataHelper.train_files,dataHelper.train_files[0])

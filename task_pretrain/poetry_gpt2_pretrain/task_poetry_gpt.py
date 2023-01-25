@@ -23,7 +23,7 @@ train_info_args = {
     'convert_file': False,
     'do_train': True,
     'train_file':'./output/dataset_0-train.record',
-    'max_epochs': 10,
+    'max_epochs': 3,
     'train_batch_size':8,
     'eval_batch_size': 2,
     'test_batch_size':2,
@@ -52,10 +52,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
     def generate_text(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", prefix):
         pl_module: MyTransformer
-
         # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-
         self.tokenizer: BertTokenizer
         tokenizer = self.tokenizer
         data_args = self.data_args
@@ -84,12 +82,13 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 token = token.replace('##', '')
             gen_tokens.append(token)
 
-        print('input', prefix)
-
         for k in batch:
             batch[k] = batch[k].cpu()
 
+
+        print('input', prefix)
         print('output', ''.join(gen_tokens))
+        print()
 
 
 
@@ -101,9 +100,17 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         special = data_conf['special']
         prefixs = [('七律','归山吟寄友'),
                    ('五绝','钓鱼有感'),
-                   ('对联', '五湖四海')
+                   ('对联', '五湖四海'),
+                   ('歌词','风雨'),
+                   ('骂人', ''),
+                   ('成语', ''),
+                   ('当代',''),
+                   ('曲',''),
+                   ('五律',''),
+                   ('七律', '')
         ]
         for prefix in prefixs:
+            print('*' * 30, prefix[0],prefix[1])
             prefix = special[prefix[0]] + prefix[1]
             self.generate_text(trainer,pl_module,prefix)
 
