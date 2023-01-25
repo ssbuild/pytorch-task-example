@@ -48,7 +48,7 @@ class MyTransformer(TransformerForCausalLM, with_pl=True):
         labels = batch.pop('labels', None)
         outputs = self.model(*args, **batch)
         hidden_states = outputs[0]
-        lm_logits = self.model.lm_head(hidden_states)
+        lm_logits = self.model.model.lm_head(hidden_states)
 
         if labels is not None:
             loss = self.loss_fct(lm_logits, labels)
