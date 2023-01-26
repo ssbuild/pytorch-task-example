@@ -5,7 +5,7 @@
   "d_ff": 2048,
   "d_kv": 64,
   "d_model": 512,
-  "decoder_start_token_id": 0,
+  "decoder_start_token_id": 101,
   "dropout_rate": 0.1,
   "initializer_factor": 1.0,
   "is_encoder_decoder": true,
