@@ -8,9 +8,7 @@ import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, PrefixModelArguments, \
     DataArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.prefixtuning import PrefixTransformerForSequenceClassification
-
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
@@ -21,7 +19,7 @@ from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices':  1,
+    'devices': 1,
     'data_backend': 'memory_raw',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -53,9 +51,15 @@ train_info_args = {
 
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, pre_seq_len, do_lower_case, label2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
+        pre_seq_len = self.external_kwargs['pre_seq_len']
+
+
         sentence, label_str = data
 
         max_seq_length -= pre_seq_len
@@ -113,8 +117,7 @@ class NN_DataHelper(DataHelper):
                     D.append((jd['sentence'], jd.get('label', None)))
         return D
 
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -140,9 +143,9 @@ class MyTransformer(PrefixTransformerForSequenceClassification, with_pl=True):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
 
-    def compute_loss(self, *args,**batch) -> tuple:
+    def compute_loss(self, *args, **batch) -> tuple:
         labels: torch.Tensor = batch.pop('labels', None)
-        outputs = self.model(*args,**batch)
+        outputs = self.model(*args, **batch)
         pooled_output = outputs[1]
         if self.model.training:
             pooled_output = self.model.dropout(pooled_output)
@@ -220,7 +223,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         print(f1, report)
 
-        best_f1 = self.best.get('f1',-np.inf)
+        best_f1 = self.best.get('f1', -np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
@@ -247,43 +250,24 @@ if __name__ == '__main__':
         strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
 
-    dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
-    save_fn_args = (tokenizer, data_args.max_seq_length, label2id, prompt_args.pre_seq_len)
-
-    token_fn_args_dict = {
-        'train': (
-            tokenizer, data_args.train_max_seq_length, prompt_args.pre_seq_len, model_args.do_lower_case, label2id,
-            'train'),
-        'eval': (
-            tokenizer, data_args.eval_max_seq_length, prompt_args.pre_seq_len, model_args.do_lower_case, label2id,
-            'eval'),
-        'test': (
-            tokenizer, data_args.test_max_seq_length, prompt_args.pre_seq_len, model_args.do_lower_case, label2id,
-            'test')
-    }
+    dataHelper = NN_DataHelper(data_args.data_backend,pre_seq_len=prompt_args.pre_seq_len)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
     # 缓存数据集
-    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
-        dataHelper.train_files.append(
-            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                              data_args,
-                                              intermediate_name=intermediate_name, shuffle=True,
-                                              mode='train'))
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args, shuffle=True,
+                                          mode='train')
     if data_args.do_eval:
-        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='eval'))
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,shuffle=False,
+                                          mode='eval')
     if data_args.do_test:
-        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='test'))
+        dataHelper.make_dataset_with_args(data_args.test_file,
+                                                   data_args,
+                                                   
+                                                   shuffle=False,
+                                                   mode='test')
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
@@ -307,7 +291,7 @@ if __name__ == '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')

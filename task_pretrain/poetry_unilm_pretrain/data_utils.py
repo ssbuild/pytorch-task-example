@@ -11,8 +11,7 @@ import typing
 
 import numpy as np
 import torch
-from deep_training.data_helper import DataHelper, ModelArguments, TrainingArguments, DataArguments, \
-    load_tokenizer_and_config_with_args
+from deep_training.data_helper import DataHelper, ModelArguments, TrainingArguments, DataArguments
 from deep_training.utils.func import is_chinese_char
 from fastdatasets.record import load_dataset as Loader, RECORD, WriterObject, gfile
 from tqdm import tqdm
@@ -34,15 +33,15 @@ data_conf = {
         '楚辞': '[unused7]',
         '诗经': '[unused7]',
         '四书五经': '[unused7]',
-        '曲':   '[unused8]',
+        '曲': '[unused8]',
         '歌词': '[unused9]',
         '对联': '[unused10]',
-        '骂人':'[unused11]',
-        '姓名':'[unused12]',
-        '词语':'[unused13]',
-        '成语':'[unused14]',
-        '歇后语':'[unused15]',
-        '汉字':'[unused16]',
+        '骂人': '[unused11]',
+        '姓名': '[unused12]',
+        '词语': '[unused13]',
+        '成语': '[unused14]',
+        '歇后语': '[unused15]',
+        '汉字': '[unused16]',
         "先秦": '[unused17]',
         "秦": '[unused17]',
         "汉": '[unused17]',
@@ -90,26 +89,30 @@ def is_format(paragraphs: typing.List[typing.AnyStr]):
             break
     return flag
 
+
 class NN_DataHelper(DataHelper):
     index = 1
 
     def on_data_ready(self):
         self.index = -1
+
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         self.index += 1
 
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
         sub_list = data
 
-
         input_ids = []
-        #每1千首
+        # 每1千首
         for idx, (type, title, paragraphs) in enumerate(sub_list):
             o = tokenizer.encode_plus(text=type + title, text_pair=paragraphs, max_length=max_seq_length,
-                                      truncation=True, return_attention_mask=False,return_token_type_ids=False)
-            if len(o['input_ids']) <=3:
+                                      truncation=True, return_attention_mask=False, return_token_type_ids=False)
+            if len(o['input_ids']) <= 3:
                 continue
             input_ids += o['input_ids'][1:-1]
             if idx != len(sub_list) - 1:
@@ -120,13 +123,13 @@ class NN_DataHelper(DataHelper):
         pos = 0
         ds = []
         while pos < len(input_ids):
-            input_ids_ = [tokenizer.cls_token_id] + input_ids[pos: pos + max_seq_length -2] + [tokenizer.sep_token_id]
+            input_ids_ = [tokenizer.cls_token_id] + input_ids[pos: pos + max_seq_length - 2] + [tokenizer.sep_token_id]
             pos += stride
             if len(input_ids_) <= 5:
                 continue
 
             input_ids_ = np.asarray(input_ids_, dtype=np.int32)
-            seqlen = np.asarray(len(input_ids_),dtype=np.int32)
+            seqlen = np.asarray(len(input_ids_), dtype=np.int32)
 
             pad_len = max_seq_length - seqlen
             if pad_len:
@@ -141,9 +144,8 @@ class NN_DataHelper(DataHelper):
             print(ds[0])
         return ds
 
-
     # 读取文件
-    def on_get_corpus(self, files:typing.List, mode:str):
+    def on_get_corpus(self, files: typing.List, mode: str):
         D = []
 
         def poetry_parser(x):
@@ -155,24 +157,25 @@ class NN_DataHelper(DataHelper):
         # {'author': '徐铉', 'title': '春尽日游后湖赠刘起居', 'paragraphs': ['今朝湖上送春归，万顷澄波照白髭。', '笑折残花劝君酒，金丹成熟是何时。'], 'tones': ['平平平仄仄平平，仄仄平平仄仄平。', '仄仄平平仄平仄，平平平仄仄平平。']}
 
         for file in files:
-            dataset = Loader.RandomDataset(file, options=RECORD.TFRecordOptions(compression_type='GZIP')).parse_from_numpy_writer()
+            dataset = Loader.RandomDataset(file, options=RECORD.TFRecordOptions(
+                compression_type='GZIP')).parse_from_numpy_writer()
             dataset = dataset.map(poetry_parser)
 
             COUNT_PER_GROUP = 1000
             basename = os.path.basename(file)
-            if basename == 'poetry_85w_part1.record': #数据重合
+            if basename == 'poetry_85w_part1.record':  # 数据重合
                 continue
-            if basename == 'xm.record': #数据重合
+            if basename == 'xm.record':  # 数据重合
                 COUNT_PER_GROUP = 10000
 
             sub = []
             special = data_conf['special']
             for i in range(len(dataset)):
                 d = dataset[i]
-                title = d.get('title','')
+                title = d.get('title', '')
                 paragraphs = d['paragraphs']
                 data_type: str = d['type']
-                type = special.get(data_type,None)
+                type = special.get(data_type, None)
                 if type is None:
                     data_type = data_type.replace('宋词', '词').replace('南唐词', '词').replace('元曲', '曲')
                     data_type = data_type.replace('宋', '').replace('唐', '')
@@ -198,7 +201,7 @@ class NN_DataHelper(DataHelper):
                     continue
                 # 每1千首为一组
                 if len(sub) < COUNT_PER_GROUP:
-                    sub.append((type,title,paragraphs))
+                    sub.append((type, title, paragraphs))
                 else:
                     D.append(copy.deepcopy(sub))
                     sub.clear()
@@ -206,9 +209,7 @@ class NN_DataHelper(DataHelper):
                 D.append(copy.deepcopy(sub))
         return D
 
-
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -224,11 +225,11 @@ class NN_DataHelper(DataHelper):
         seqlens = o.pop('seqlen')
         max_len = torch.max(seqlens)
         o['input_ids'] = o['input_ids'][:, :max_len].long()
-        token_type_ids = torch.zeros_like(o['input_ids'],dtype=torch.long)
-        for idx,seqlen in enumerate(seqlens):
+        token_type_ids = torch.zeros_like(o['input_ids'], dtype=torch.long)
+        for idx, seqlen in enumerate(seqlens):
             seqlen = seqlen.squeeze(-1).numpy().tolist()
-            s = np.random.randint(2,seqlen-1,dtype=np.int32).tolist()
-            token_type_ids[idx,s:seqlen-1] = 1
+            s = np.random.randint(2, seqlen - 1, dtype=np.int32).tolist()
+            token_type_ids[idx, s:seqlen - 1] = 1
         o['token_type_ids'] = token_type_ids
         o['labels'] = torch.clone(o['input_ids'])
         return o
@@ -246,46 +247,28 @@ if __name__ == '__main__':
         'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
         'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
         'do_train': True,
-        'train_file':  ','.join(train_files),
+        'train_file': ','.join(train_files),
         'output_dir': './output',
         'max_seq_length': 512,
     }
-
 
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
-
-    token_fn_args_dict = {
-        'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
-        'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id, 'eval'),
-        'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
-    }
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
     # 缓存数据集
-    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
-        dataHelper.train_files.append(
-            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                              data_args,
-                                              intermediate_name=intermediate_name, shuffle=True,
-                                              mode='train'))
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args, shuffle=True,
+                                          mode='train')
     if data_args.do_eval:
-        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='eval'))
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,shuffle=False,
+                                          mode='eval')
     if data_args.do_test:
-        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='test'))
-
+        dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
 
 
     def shuffle_records(record_filenames, outfile, compression_type='GZIP'):
@@ -301,12 +284,12 @@ if __name__ == '__main__':
 
         shuffle_idx = list(range(data_size))
         random.shuffle(shuffle_idx)
-        writer = WriterObject(outfile,options=options)
+        writer = WriterObject(outfile, options=options)
         for i in tqdm(shuffle_idx, desc='shuffle record'):
             example = all_example[i]
             writer.write(example)
         writer.close()
 
 
-    #再次打乱数据
-    shuffle_records(dataHelper.train_files,dataHelper.train_files[0])
+    # 再次打乱数据
+    shuffle_records(dataHelper.train_files, dataHelper.train_files[0])

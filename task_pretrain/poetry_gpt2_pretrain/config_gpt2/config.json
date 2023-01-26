@@ -4,9 +4,9 @@
     "GPT2LMHeadModel"
   ],
   "return_dict": false,
-  "resid_pdrop":0.1,
+  "resid_pdrop": 0.1,
   "embd_pdrop": 0.1,
-  "attn_pdrop":0.1,
+  "attn_pdrop": 0.1,
   "initializer_range": 0.02,
   "layer_norm_epsilon": 1e-05,
   "n_embd": 768,

@@ -10,14 +10,11 @@ import pytorch_lightning
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.infonce import TransformerForInfoNce
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
-from tfrecords import TFRecordOptions
-from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
@@ -35,12 +32,12 @@ train_info_args = {
     'do_train': True,
     'do_eval': True,
     'do_test': False,
-     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
+    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
-    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
-    'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    'train_file': '/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    'test_file': '/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
@@ -64,9 +61,9 @@ train_info_args = {
     'test_max_seq_length': 512,
 }
 
-#cls , pooler , last-avg , first-last-avg , reduce
+# cls , pooler , last-avg , first-last-avg , reduce
 pooling = 'cls'
-temperature= 0.1
+temperature = 0.1
 
 
 class NN_DataHelper(DataHelper):
@@ -76,10 +73,13 @@ class NN_DataHelper(DataHelper):
         self.index = -1
 
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         self.index += 1
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
         # 训练集(sentence1, sentence2, sentence3)  验证集(sentence1, sentence2, labelstr)
         sentence1, sentence2, sentence3_or_labelstr = data
         if mode == 'train':
@@ -139,7 +139,7 @@ class NN_DataHelper(DataHelper):
 
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
-        return None,None
+        return None, None
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
@@ -178,8 +178,7 @@ class NN_DataHelper(DataHelper):
 
         return D
 
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -200,8 +199,6 @@ class NN_DataHelper(DataHelper):
         return o
 
 
-
-
 def generate_pair_example(all_example_dict: dict):
     all_example_dict = copy.copy(all_example_dict)
 
@@ -217,7 +214,8 @@ def generate_pair_example(all_example_dict: dict):
         examples = all_example_dict[pos_label]
         if len(examples) == 0:
             continue
-        num_size = int(len(examples) // 5) if len(examples) > 100 else np.random.randint(1,min(50,len(examples)),dtype=np.int32)
+        num_size = int(len(examples) // 5) if len(examples) > 100 else np.random.randint(1, min(50, len(examples)),
+                                                                                         dtype=np.int32)
         if num_size < 2:
             continue
         id_list = list(range(len(examples)))
@@ -265,20 +263,19 @@ def generate_pair_example(all_example_dict: dict):
     return all_example_pos, all_example_neg
 
 
-def evaluate_sample(a_vecs,b_vecs,labels):
-    print('*' * 30,'evaluating...',a_vecs.shape,b_vecs.shape,labels.shape,'pos',np.sum(labels))
-    sims = 1 - paired_distances(a_vecs,b_vecs,metric='cosine')
-    print(np.concatenate([sims[:5] , sims[-5:]],axis=0))
-    print(np.concatenate([labels[:5] , labels[-5:]],axis=0))
-    correlation,_  = stats.spearmanr(labels,sims)
+def evaluate_sample(a_vecs, b_vecs, labels):
+    print('*' * 30, 'evaluating...', a_vecs.shape, b_vecs.shape, labels.shape, 'pos', np.sum(labels))
+    sims = 1 - paired_distances(a_vecs, b_vecs, metric='cosine')
+    print(np.concatenate([sims[:5], sims[-5:]], axis=0))
+    print(np.concatenate([labels[:5], labels[-5:]], axis=0))
+    correlation, _ = stats.spearmanr(labels, sims)
     print('spearman ', correlation)
     return correlation
 
+
 class MyTransformer(TransformerForInfoNce, pytorch_lightning.LightningModule, with_pl=True):
-    def __init__(self,*args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
-
-
 
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
@@ -294,7 +291,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
 
         a_vecs, b_vecs, labels = [], [], []
         for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
@@ -317,13 +315,12 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         corrcoef = evaluate_sample(a_vecs, b_vecs, labels)
         f1 = corrcoef
-        best_f1 = self.best.get('f1',-np.inf)
+        best_f1 = self.best.get('f1', -np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
             logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
-
 
 
 if __name__ == '__main__':
@@ -347,35 +344,19 @@ if __name__ == '__main__':
     )
 
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
-
-    token_fn_args_dict = {
-        'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
-        'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id, 'eval'),
-        'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
-    }
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
     # 缓存数据集
-    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
-        dataHelper.train_files.append(
-            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                              data_args,
-                                              intermediate_name=intermediate_name, shuffle=True,
-                                              mode='train'))
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args, shuffle=True,
+                                          mode='train')
     if data_args.do_eval:
-        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='eval'))
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,shuffle=False,
+                                          mode='eval')
     if data_args.do_test:
-        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='test'))
+        dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
@@ -387,13 +368,14 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-    model = MyTransformer(pooling=pooling,temperature=temperature,config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(pooling=pooling, temperature=temperature, config=config, model_args=model_args,
+                          training_args=training_args)
 
     if train_datasets is not None:
-        trainer.fit(model,train_dataloaders=train_datasets)
+        trainer.fit(model, train_dataloaders=train_datasets)
 
     else:
-        #加载权重
+        # 加载权重
         model = MyTransformer.load_from_checkpoint('./best.pt', pooling=pooling, temperature=temperature,
                                                    config=config, model_args=model_args,
                                                    training_args=training_args)
@@ -413,9 +395,8 @@ if __name__ == '__main__':
         if test_datasets is not None:
             trainer.test(model, dataloaders=test_datasets, ckpt_path='./best.pt')
 
-
         is_convert_onnx = True
-        #是否转换模型
+        # 是否转换模型
         if is_convert_onnx:
             input_sample = (
                 torch.ones(size=(1, 128), dtype=torch.int32),
@@ -426,7 +407,7 @@ if __name__ == '__main__':
             input_names = ["input_ids", "attention_mask"]
             out_names = ["pred_ids"]
 
-            model = MyTransformer.load_from_checkpoint('./best.pt',pooling=pooling,temperature=temperature,
+            model = MyTransformer.load_from_checkpoint('./best.pt', pooling=pooling, temperature=temperature,
                                                        config=config, model_args=model_args,
                                                        training_args=training_args)
             model.to_onnx('./best.onnx',
@@ -441,4 +422,3 @@ if __name__ == '__main__':
                                         "pred_ids": [0, 1]
                                         }
                           )
-

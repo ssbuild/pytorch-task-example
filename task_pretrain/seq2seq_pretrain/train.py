@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.transformer import TransformerForSeq2SeqLM
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -15,7 +14,7 @@ from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices':  1,
+    'devices': 1,
     'data_backend': 'memory_raw',
     'model_type': 't5',
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
@@ -42,9 +41,16 @@ train_info_args = {
 
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, max_target_length, do_lower_case, label2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
+
+        max_target_length = self.data_args.max_target_length
+
+
         x = data
         o1 = tokenizer.encode_plus(x[0], max_length=max_seq_length, truncation=True, add_special_tokens=True, )
         o2 = tokenizer.encode_plus(x[1], max_length=max_target_length, truncation=True, add_special_tokens=True, )
@@ -95,8 +101,7 @@ class NN_DataHelper(DataHelper):
                         break
         return D
 
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -126,9 +131,9 @@ class MyTransformer(TransformerForSeq2SeqLM, with_pl=True):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
 
-    def compute_loss(self, *args,**batch) -> tuple:
+    def compute_loss(self, *args, **batch) -> tuple:
         labels = batch.pop('labels', None)
-        outputs = self.model(*args,**batch)
+        outputs = self.model(*args, **batch)
         lm_logits = outputs[0]
         if labels is not None:
             loss = self.loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
@@ -138,12 +143,12 @@ class MyTransformer(TransformerForSeq2SeqLM, with_pl=True):
         return outputs
 
 
-
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=5, every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=5,
+                                          every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
@@ -159,41 +164,19 @@ if __name__ == '__main__':
     )
 
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
-    token_fn_args_dict = {
-        'train': (
-            tokenizer, data_args.train_max_seq_length, data_args.max_target_length, model_args.do_lower_case, label2id,
-            'train'),
-        'eval': (
-            tokenizer, data_args.eval_max_seq_length, data_args.max_target_length, model_args.do_lower_case, label2id,
-            'eval'),
-        'test': (
-            tokenizer, data_args.test_max_seq_length, data_args.max_target_length, model_args.do_lower_case, label2id,
-            'test')
-    }
 
-    # 缓存数据集
-    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
-    if data_args.do_train:
-        dataHelper.train_files.append(
-            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                              data_args,
-                                              intermediate_name=intermediate_name, shuffle=True,
-                                              mode='train'))
+    # 缓存数据集if data_args.do_train:
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args, shuffle=True,
+                                          mode='train')
     if data_args.do_eval:
-        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='eval'))
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,shuffle=False,
+                                          mode='eval')
     if data_args.do_test:
-        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='test'))
+        dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
@@ -203,7 +186,6 @@ if __name__ == '__main__':
         train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
@@ -219,7 +201,7 @@ if __name__ == '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')

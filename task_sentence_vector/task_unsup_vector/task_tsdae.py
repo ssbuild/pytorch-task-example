@@ -8,14 +8,13 @@ import numpy as np
 import torch
 from deep_training.data_helper import DataHelper, load_tokenizer, load_configure
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.tsdae_model import TransformerForTSDAE, TsdaelArguments
 from deep_training.utils.func import seq_pading, seq_padding
 from deep_training.utils.trainer import SimpleModelCheckpoint
+from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from pytorch_lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
-from fastdatasets.torch_dataset import Dataset as torch_Dataset
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
@@ -35,12 +34,12 @@ train_info_args = {
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data',
-    # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
-    # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
-    # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
-    'train_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
-    'eval_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
-    'test_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
+    'train_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data',
+    'eval_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data',
+    'test_file':'/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data',
+    # 'train_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data',
+    # 'eval_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data',
+    # 'test_file': '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data',
     # 'train_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data',
     # 'eval_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data',
     # 'test_file':'/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data',
@@ -100,9 +99,15 @@ def add_token_noise(tokens, del_ratio=0.6):
 
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         tokenizer: BertTokenizer
-        tokenizer, decoder_tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
+        decoder_tokenizer = self.decoder_tokenizer
+
+
         sentence1, sentence2, label_str = data
         # sentence1, sentence2 independent sample for training
         if mode == 'train':
@@ -116,7 +121,7 @@ class NN_DataHelper(DataHelper):
                     'input_ids': seq_padding(tokens_ids, max_seq_length=max_seq_length, dtype=np.int32),
                     'attention_mask': seq_padding([1] * seqlen, max_seq_length=max_seq_length, dtype=np.int32),
                     'seqlen': np.asarray(seqlen, dtype=np.int32),
-                    **{k + '2' : v for k, v in
+                    **{k + '2': v for k, v in
                        pad_to_seqlength(sentence, decoder_tokenizer, max_seq_length).items()},
                 })
         # 评估样本
@@ -126,7 +131,7 @@ class NN_DataHelper(DataHelper):
             d2 = pad_to_seqlength(sentence2, tokenizer, max_seq_length)
             d = d1
             for k, v in d2.items():
-                d[k+ '2'] = v
+                d[k + '2'] = v
 
             if label_str is not None:
                 labels = np.asarray(int(label_str), dtype=np.int32)
@@ -135,7 +140,7 @@ class NN_DataHelper(DataHelper):
 
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
-        return None,None
+        return None, None
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
@@ -167,8 +172,7 @@ class NN_DataHelper(DataHelper):
 
         return D
 
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -256,7 +260,8 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments, TsdaelArguments))
     model_args, training_args, data_args, tsdae_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1,every_n_train_steps=300 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="f1", every_n_epochs=1,
+                                                  every_n_train_steps=300 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         log_every_n_steps=20,
         callbacks=[checkpoint_callback],
@@ -273,9 +278,13 @@ if __name__ == '__main__':
     )
 
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
+    dataHelper.decoder_tokenizer = None
+    dataHelper.decoder_config = None
+
     decoder_tokenizer, decoder_config = None, None
+
+    #缓存数据
     if data_args.do_train:
         # 加载解码器配置，非训练模式可以不加载
         decoder_tokenizer = load_tokenizer(tokenizer_name=tsdae_args.decoder_tokenizer_name,
@@ -299,36 +308,19 @@ if __name__ == '__main__':
                                             "sep_token_id": tokenizer.sep_token_id
                                         })
 
-    rng = random.Random(training_args.seed)
-    token_fn_args_dict = {
-        'train': (tokenizer, decoder_tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id,
-                  'train'),
-        'eval': (tokenizer, decoder_tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id,
-                 'eval'),
-        'test': (tokenizer, decoder_tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id,
-                 'test')
-    }
+        dataHelper.decoder_tokenizer = decoder_tokenizer
+        dataHelper.decoder_config = decoder_config
 
-    # 缓存数据集
-    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
-    if data_args.do_train:
-        dataHelper.train_files.append(
-            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                              data_args,
-                                              intermediate_name=intermediate_name, shuffle=True,
-                                              mode='train'))
+
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args, shuffle=True,
+                                          mode='train')
     if data_args.do_eval:
-        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='eval'))
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,shuffle=False,
+                                          mode='eval')
     if data_args.do_test:
-        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='test'))
+        dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,

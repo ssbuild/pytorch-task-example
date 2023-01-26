@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#参考实现: https://github.com/ssnvxia/OneRel
+# 参考实现: https://github.com/ssnvxia/OneRel
 
 import copy
 import json
@@ -10,13 +10,10 @@ import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_spo
 from deep_training.nlp.models.onerel_model import TransformerForOneRel, extract_spoes
-
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer
@@ -56,19 +53,22 @@ train_info_args = {
 }
 
 
-
-
 class NN_DataHelper(DataHelper):
     index = -1
     eval_labels = []
+
     def on_data_ready(self):
         self.index = -1
 
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         self.index += 1
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, do_lower_case, predicate2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
+
         sentence, entities, re_list = data
         spo_list = re_list
         tokens = list(sentence) if not do_lower_case else list(sentence.lower())
@@ -80,15 +80,14 @@ class NN_DataHelper(DataHelper):
         input_ids = np.asarray(input_ids, dtype=np.int32)
         attention_mask = np.asarray(attention_mask, dtype=np.int32)
 
-
-        labels,real_label = [],[]
+        labels, real_label = [], []
         for s, p, o in spo_list:
-            p: int = predicate2id[p]
+            p: int = label2id[p]
             real_label.append((s[0], s[1], p, o[0], o[1]))
             s = (s[0] + 1, s[1] + 1)
             o = (o[0] + 1, o[1] + 1)
             if s[1] < max_seq_length - 1 and o[1] < max_seq_length - 1:
-                labels.append((s[0],s[1],p,o[0],o[1]))
+                labels.append((s[0], s[1], p, o[0], o[1]))
 
         pad_len = max_seq_length - len(input_ids)
         if pad_len > 0:
@@ -98,7 +97,7 @@ class NN_DataHelper(DataHelper):
         d = {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
-            'labels': np.asarray(labels,dtype=np.int32),
+            'labels': np.asarray(labels, dtype=np.int32),
             'seqlen': seqlen,
         }
         if self.index < 5:
@@ -122,8 +121,6 @@ class NN_DataHelper(DataHelper):
                 labels.append('+'.join(larr))
         label2id = {label: i for i, label in enumerate(labels)}
         id2label = {i: label for i, label in enumerate(labels)}
-        NN_DataHelper.label2id = label2id
-        NN_DataHelper.id2label = id2label
         return label2id, id2label
 
     # 读取文件
@@ -169,13 +166,12 @@ class NN_DataHelper(DataHelper):
                     D.append((jd['text'], entities_label, re_list_label))
         return D
 
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         o = {}
         fake_labels = []
         for i, b in enumerate(batch):
             b = copy.copy(b)
-            fake_labels.append(b.pop('labels',None))
+            fake_labels.append(b.pop('labels', None))
             if i == 0:
                 for k in b:
                     o[k] = [torch.tensor(b[k])]
@@ -190,16 +186,16 @@ class NN_DataHelper(DataHelper):
         max_len = torch.max(seqlens)
         has_label = fake_labels[0] is not None
 
-        labels = np.zeros(shape=(bs,len(NN_DataHelper.label2id),max_len,max_len),dtype=np.int32)
+        labels = np.zeros(shape=(bs, len(self.label2id), max_len, max_len), dtype=np.int32)
         if has_label:
-            for spo,label,seqlen in zip(fake_labels,labels,seqlens):
-                for sh,st,p,oh,ot in spo:
+            for spo, label, seqlen in zip(fake_labels, labels, seqlens):
+                for sh, st, p, oh, ot in spo:
                     label[p, sh, oh] = 1
                     label[p, sh, ot] = 2
                     label[p, st, ot] = 3
-                label[:,seqlen:,seqlen:] = -100
+                label[:, seqlen:, seqlen:] = -100
 
-        labels = torch.tensor(labels,dtype=torch.long)
+        labels = torch.tensor(labels, dtype=torch.long)
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
@@ -210,36 +206,36 @@ class NN_DataHelper(DataHelper):
 
 
 class MyTransformer(TransformerForOneRel, with_pl=True):
-    def __init__(self,eval_labels,*args, **kwargs):
+    def __init__(self, eval_labels, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.index = 0
         self.eval_labels = eval_labels
 
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
-    def __init__(self,*args,**kwargs):
-        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         pl_module: MyTransformer
 
-        #当前设备
+        # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
 
         eval_labels = pl_module.eval_labels
         config = pl_module.config
 
-
         y_preds, y_trues = [], []
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+        for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
-            o = pl_module.validation_step(batch,i)
+            o = pl_module.validation_step(batch, i)
 
             logits, _ = o['outputs']
             output_labels = eval_labels[i * len(logits):(i + 1) * len(logits)]
@@ -254,9 +250,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         print(f1)
         print(str_report)
 
-
-
-        best_f1 = self.best.get('f1',-np.inf)
+        best_f1 = self.best.get('f1', -np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
@@ -284,34 +278,21 @@ if __name__ == '__main__':
     )
 
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
-    token_fn_args_dict = {
-        'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
-        'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id, 'eval'),
-        'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
-    }
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
     # 缓存数据集
-    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
-        dataHelper.train_files.append(
-            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                              data_args,
-                                              intermediate_name=intermediate_name, shuffle=True,
-                                              mode='train'))
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args, shuffle=True,
+                                          mode='train')
     if data_args.do_eval:
-        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='eval'))
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,shuffle=False,
+                                          mode='eval')
     if data_args.do_test:
-        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='test'))
+        dataHelper.make_dataset_with_args(data_args.test_file,
+                                           data_args, shuffle=False,
+                                           mode='test')
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
@@ -322,9 +303,8 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-
-    model = MyTransformer(dataHelper.eval_labels,entity_pair_dropout=0.15, config=config, model_args=model_args, training_args=training_args)
-
+    model = MyTransformer(dataHelper.eval_labels, entity_pair_dropout=0.15, config=config, model_args=model_args,
+                          training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
@@ -338,10 +318,10 @@ if __name__ == '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')
 
         is_convert_onnx = True
         # 是否转换模型

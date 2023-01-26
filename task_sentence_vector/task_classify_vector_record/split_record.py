@@ -5,12 +5,12 @@
 import os
 import random
 
-import numpy as np
 from fastdatasets.record import load_dataset as Loader, gfile, RECORD, WriterObject
 from tfrecords import TFRecordOptions
 from tqdm import tqdm
 
-#拆分数据集
+
+# 拆分数据集
 def split_records(input_record_filenames, output_train_file, output_eval_file, compression_type='GZIP'):
     print('split_records record...')
     options = RECORD.TFRecordOptions(compression_type=compression_type)
@@ -29,8 +29,7 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
     random.shuffle(shuffle_idx)
 
     writer_train = WriterObject(output_train_file, options=TFRecordOptions(compression_type='GZIP'))
-    writer_eval = WriterObject(output_eval_file,options=TFRecordOptions(compression_type='GZIP'))
-
+    writer_eval = WriterObject(output_eval_file, options=TFRecordOptions(compression_type='GZIP'))
 
     num_train = 0
     num_eval = 0
@@ -46,11 +45,10 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
 
         writer.write(example)
 
-
     writer_train.close()
     writer_eval.close()
 
-    print('num_train',num_train,'num_eval',num_eval)
+    print('num_train', num_train, 'num_eval', num_eval)
 
 
 if __name__ == '__main__':
@@ -62,9 +60,8 @@ if __name__ == '__main__':
     if not os.path.exists(dst_dir):
         gfile.makedirs(dst_dir)
 
-
-    output_train_file = os.path.join(dst_dir,'train.record')
-    output_eval_file = os.path.join(dst_dir,'eval.record')
+    output_train_file = os.path.join(dst_dir, 'train.record')
+    output_eval_file = os.path.join(dst_dir, 'eval.record')
 
     split_records(input_record_filenames=src_files,
                   output_train_file=output_train_file,

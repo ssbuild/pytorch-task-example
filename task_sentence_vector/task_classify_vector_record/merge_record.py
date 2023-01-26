@@ -3,14 +3,13 @@
 # @FileName: split_record.py
 
 import os
-import random
 
-import numpy as np
 from fastdatasets.record import load_dataset as Loader, gfile, RECORD, WriterObject
 from tfrecords import TFRecordOptions
 from tqdm import tqdm
 
-#合并数据集
+
+# 合并数据集
 def merge_records(input_record_filenames, output_file, compression_type='GZIP'):
     print('split_records record...')
     options = RECORD.TFRecordOptions(compression_type=compression_type)
@@ -33,7 +32,7 @@ def merge_records(input_record_filenames, output_file, compression_type='GZIP'):
         writer_output.write(example)
     writer_output.close()
 
-    print('num',len(shuffle_idx))
+    print('num', len(shuffle_idx))
 
 
 if __name__ == '__main__':
@@ -45,8 +44,7 @@ if __name__ == '__main__':
     if not os.path.exists(dst_dir):
         gfile.makedirs(dst_dir)
 
-
-    output_file = os.path.join(dst_dir,'eval_pos_neg.record.cache')
+    output_file = os.path.join(dst_dir, 'eval_pos_neg.record.cache')
 
     merge_records(input_record_filenames=src_files,
-                  output_file=output_file,)
+                  output_file=output_file, )

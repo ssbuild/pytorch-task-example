@@ -8,10 +8,8 @@ import numpy as np
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.metrics.pointer import metric_for_spo
 from deep_training.nlp.models.tplinkerplus import TransformerForTplinkerPlus, extract_spoes, TplinkerArguments
-
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT
@@ -53,13 +51,13 @@ train_info_args = {
     'train_max_seq_length': 160,
     'eval_max_seq_length': 200,
     'test_max_seq_length': 200,
-#tplinker_plus args
-    'shaking_type': 'cln_plus', #one of ['cat','cat_plus','cln','cln_plus']
-    'inner_enc_type': 'linear', #one of ['mix_pooling','mean_pooling','max_pooling','lstm','linear']
+    # tplinker_plus args
+    'shaking_type': 'cln_plus',  # one of ['cat','cat_plus','cln','cln_plus']
+    'inner_enc_type': 'linear',  # one of ['mix_pooling','mean_pooling','max_pooling','lstm','linear']
     'tok_pair_sample_rate': 0,
-# scheduler
+    # scheduler
     'scheduler_type': 'CAWR',
-    'scheduler': {'T_mult': 1, 'rewarm_epoch_num': 2,'verbose': False} ,
+    'scheduler': {'T_mult': 1, 'rewarm_epoch_num': 2, 'verbose': False},
 }
 
 
@@ -69,21 +67,24 @@ class NN_DataHelper(DataHelper):
 
     index = -1
     eval_labels = []
-    id2label,label2id = None,None
+    id2label, label2id = None, None
 
-    #从语料获取训练集的文本最大长度
+    # 从语料获取训练集的文本最大长度
     max_text_length = 0
 
     def on_data_ready(self):
         self.index = -1
 
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         self.index += 1
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
         if mode == 'train':
-            max_seq_length = min(max_seq_length,self.max_text_length + 2)
+            max_seq_length = min(max_seq_length, self.max_text_length + 2)
 
         sentence, entities, re_list = data
         spo_list = re_list
@@ -95,7 +96,6 @@ class NN_DataHelper(DataHelper):
         attention_mask = [1] * seqlen
         input_ids = np.asarray(input_ids, dtype=np.int32)
         attention_mask = np.asarray(attention_mask, dtype=np.int32)
-
 
         labels = []
         rel2id = self.task_specific_params['rel2id']
@@ -112,7 +112,7 @@ class NN_DataHelper(DataHelper):
                 if s[0] <= o[0]:
                     labels.append((label2id[p + '_SOH'], s[0], o[0]))
                 else:
-                    labels.append((label2id[p + '_OSH'], o[0],s[0]))
+                    labels.append((label2id[p + '_OSH'], o[0], s[0]))
 
                 if s[1] <= o[1]:
                     labels.append((label2id[p + '_SOT'], s[1], o[1]))
@@ -131,7 +131,7 @@ class NN_DataHelper(DataHelper):
             'input_ids': input_ids,
             'attention_mask': attention_mask,
             'labels': labels,
-            'seqlen': np.asarray(max_seq_length if is_fixed_input_length else seqlen,dtype=np.int32),
+            'seqlen': np.asarray(max_seq_length if is_fixed_input_length else seqlen, dtype=np.int32),
         }
 
         if self.index < 5:
@@ -161,25 +161,22 @@ class NN_DataHelper(DataHelper):
 
         labels = list(set(labels))
         labels = sorted(labels)
-        labels = [i + '_' + j for i in labels for j in ['SOH','OSH','SOT','OST']]
+        labels = [i + '_' + j for i in labels for j in ['SOH', 'OSH', 'SOT', 'OST']]
         labels += [i + '_EE' for i in entities]
         label2id = {label: i for i, label in enumerate(labels)}
         id2label = {i: label for i, label in enumerate(labels)}
-
-        NN_DataHelper.label2id = label2id
-        NN_DataHelper.id2label = id2label
         return label2id, id2label
 
     def on_task_specific_params(self):
-        labels = list(set([i.rsplit('_', 1)[0] for i in NN_DataHelper.label2id if not i.endswith('_EE')]))
-        labels_e = list(set([i.rsplit('_', 1)[0] for i in NN_DataHelper.label2id if i.endswith('_EE')]))
+        labels = list(set([i.rsplit('_', 1)[0] for i in self.label2id if not i.endswith('_EE')]))
+        labels_e = list(set([i.rsplit('_', 1)[0] for i in self.label2id if i.endswith('_EE')]))
         task_specific_params = {
             'rel2id': {l: i for i, l in enumerate(labels)},
             'id2rel': {i: l for i, l in enumerate(labels)},
             'ent2id': {l: i for i, l in enumerate(labels_e)},
             'id2ent': {i: l for i, l in enumerate(labels_e)},
-            'label2id': NN_DataHelper.label2id,
-            'id2label': NN_DataHelper.id2label,
+            'label2id': self.label2id,
+            'id2label': self.id2label,
         }
         self.task_specific_params = task_specific_params
         return task_specific_params
@@ -226,17 +223,12 @@ class NN_DataHelper(DataHelper):
                     else:
                         re_list_label = None
                     text = jd['text']
-                    self.max_text_length = max(len(text),self.max_text_length)
+                    self.max_text_length = max(len(text), self.max_text_length)
                     D.append((text, entities_label, re_list_label))
         return D
 
-
-
-
-
     # batch dataset
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         bs = len(batch)
         o = {}
         labels_info = []
@@ -253,7 +245,7 @@ class NN_DataHelper(DataHelper):
             o[k] = torch.stack(o[k])
         max_len = torch.max(o.pop('seqlen'))
         shaking_len = int(max_len * (max_len + 1) / 2)
-        labels = torch.zeros(size=(bs ,len(NN_DataHelper.label2id),shaking_len), dtype=torch.long)
+        labels = torch.zeros(size=(bs, len(self.label2id), shaking_len), dtype=torch.long)
         get_pos = lambda x0, x1: x0 * max_len + x1 - int(x0 * (x0 + 1) / 2)
         for linfo, label in zip(labels_info, labels):
             for l, s, e in linfo:
@@ -271,13 +263,12 @@ class NN_DataHelper(DataHelper):
 
 
 class MyTransformer(TransformerForTplinkerPlus, with_pl=True):
-    def __init__(self,eval_labels,*args, **kwargs):
+    def __init__(self, eval_labels, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.index = 0
         self.eval_labels = eval_labels
         self.rel2id = self.config.task_specific_params['rel2id']
         self.id2rel = self.config.task_specific_params['id2rel']
-
 
     def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
         self.index += 1
@@ -288,11 +279,11 @@ class MyTransformer(TransformerForTplinkerPlus, with_pl=True):
         # 关系标注
         eval_labels = self.eval_labels
         y_preds, y_trues = [], []
-        for i,o in tqdm(enumerate(outputs),total=len(outputs)):
+        for i, o in tqdm(enumerate(outputs), total=len(outputs)):
             logits, _ = o['outputs']
             bs = len(logits)
-            output_labels = eval_labels[i*bs:(i + 1)*bs]
-            p_spoes = extract_spoes(logits,self.config.id2label,self.rel2id,threshold)
+            output_labels = eval_labels[i * bs:(i + 1) * bs]
+            p_spoes = extract_spoes(logits, self.config.id2label, self.rel2id, threshold)
             t_spoes = output_labels
             y_preds.extend(p_spoes)
             y_trues.extend(t_spoes)
@@ -306,19 +297,20 @@ class MyTransformer(TransformerForTplinkerPlus, with_pl=True):
 
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
-    def __init__(self,*args,**kwargs):
-        super(MySimpleModelCheckpoint, self).__init__(*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
 
     def on_save_model(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         pl_module: MyTransformer
 
-        #当前设备
+        # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
+                                   collate_fn=dataHelper.collate_fn)
 
         threshold = 1e-8
         eval_labels = pl_module.eval_labels
@@ -326,10 +318,10 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         rel2id = pl_module.rel2id
 
         y_preds, y_trues = [], []
-        for i,batch in tqdm(enumerate(eval_datasets),total=len(eval_datasets),desc='evalute'):
+        for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
             for k in batch:
                 batch[k] = batch[k].to(device)
-            o = pl_module.validation_step(batch,i)
+            o = pl_module.validation_step(batch, i)
 
             logits, _ = o['outputs']
             bs = len(logits)
@@ -345,8 +337,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         print(f1)
         print(str_report)
 
-
-        best_f1 = self.best.get('f1',-np.inf)
+        best_f1 = self.best.get('f1', -np.inf)
         print('current', f1, 'best', best_f1)
         if f1 >= best_f1:
             self.best['f1'] = f1
@@ -354,10 +345,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             trainer.save_checkpoint(self.weight_file)
 
 
-
 if __name__ == '__main__':
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,TplinkerArguments))
-    model_args, training_args, data_args , tplinker_args = parser.parse_dict(train_info_args)
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments, TplinkerArguments))
+    model_args, training_args, data_args, tplinker_args = parser.parse_dict(train_info_args)
 
     checkpoint_callback = MySimpleModelCheckpoint(monitor="val_f1", every_n_epochs=1)
     trainer = Trainer(
@@ -375,34 +365,19 @@ if __name__ == '__main__':
     )
 
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
-    token_fn_args_dict = {
-        'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
-        'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id, 'eval'),
-        'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
-    }
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
     # 缓存数据集
-    intermediate_name = data_args.intermediate_name + '_{}'.format(0)
     if data_args.do_train:
-        dataHelper.train_files.append(
-            dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                              data_args,
-                                              intermediate_name=intermediate_name, shuffle=True,
-                                              mode='train'))
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args, shuffle=True,
+                                          mode='train')
     if data_args.do_eval:
-        dataHelper.eval_files.append(dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='eval'))
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,shuffle=False,
+                                          mode='eval')
     if data_args.do_test:
-        dataHelper.test_files.append(dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                                       data_args,
-                                                                       intermediate_name=intermediate_name,
-                                                                       shuffle=False,
-                                                                       mode='test'))
+        dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
@@ -413,8 +388,8 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-
-    model = MyTransformer(dataHelper.eval_labels,tplinker_args=tplinker_args, config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(dataHelper.eval_labels, tplinker_args=tplinker_args, config=config, model_args=model_args,
+                          training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
@@ -428,7 +403,7 @@ if __name__ == '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')

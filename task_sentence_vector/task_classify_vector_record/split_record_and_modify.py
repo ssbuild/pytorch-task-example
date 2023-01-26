@@ -5,22 +5,23 @@
 import os
 import random
 
-import numpy as np
-from fastdatasets.record import load_dataset as Loader, gfile, RECORD, NumpyWriter
+from fastdatasets.record import load_dataset as Loader, RECORD, NumpyWriter
 from tqdm import tqdm
 
-#拆分数据集
+
+# 拆分数据集
 def split_records(input_record_filenames, output_train_file, output_eval_file, compression_type='GZIP'):
     print('split_records record...')
     options = RECORD.TFRecordOptions(compression_type=compression_type)
-    dataset_reader = Loader.RandomDataset(input_record_filenames, options=options, with_share_memory=True).parse_from_numpy_writer()
+    dataset_reader = Loader.RandomDataset(input_record_filenames, options=options,
+                                          with_share_memory=True).parse_from_numpy_writer()
     data_size = len(dataset_reader)
     all_example = []
     for i in tqdm(range(data_size), desc='load records'):
         serialized = dataset_reader[i]
         all_example.append(serialized)
 
-    if hasattr(dataset_reader,'close'):
+    if hasattr(dataset_reader, 'close'):
         dataset_reader.close()
     else:
         dataset_reader.reset()
@@ -28,9 +29,8 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
     shuffle_idx = list(range(data_size))
     random.shuffle(shuffle_idx)
 
-    writer_train = NumpyWriter(output_train_file,options=options)
-    writer_eval = NumpyWriter(output_eval_file,options=options)
-
+    writer_train = NumpyWriter(output_train_file, options=options)
+    writer_eval = NumpyWriter(output_eval_file, options=options)
 
     num_train = 0
     num_eval = 0
@@ -52,18 +52,15 @@ def split_records(input_record_filenames, output_train_file, output_eval_file, c
 
     writer_train.close()
     writer_eval.close()
-    print('num_train',num_train,'num_eval',num_eval)
+    print('num_train', num_train, 'num_eval', num_eval)
 
 
 if __name__ == '__main__':
-
-
-
     example_files = r'/home/tk/train/make_big_data/output/dataset_0-train.record'
 
-    output_train_file = os.path.join('/home/tk/train/make_big_data/output','train.record')
+    output_train_file = os.path.join('/home/tk/train/make_big_data/output', 'train.record')
 
-    output_eval_file = os.path.join('/home/tk/train/make_big_data/output','eval.record')
+    output_eval_file = os.path.join('/home/tk/train/make_big_data/output', 'eval.record')
 
     split_records(input_record_filenames=example_files,
                   output_train_file=output_train_file,

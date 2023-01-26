@@ -6,17 +6,16 @@ import typing
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
 from deep_training.nlp.models.transformer import TransformerForMaskLM
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
-from transformers import BertTokenizerFast, HfArgumentParser
+from transformers import BertTokenizerFast, HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices':  1,
+    'devices': 1,
     'data_backend': 'memory_raw',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -45,14 +44,17 @@ train_info_args = {
 }
 
 
-
-
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: typing.Any):
-        tokenizer: BertTokenizerFast
-        tokenizer,max_seq_length,do_lower_case, label2id,\
-        rng, do_whole_word_mask, max_predictions_per_seq, masked_lm_prob,mode = user_data
+    def on_data_process(self, data: typing.Any, mode: typing.Any):
+        tokenizer: BertTokenizer
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
+
+        rng, do_whole_word_mask, max_predictions_per_seq, masked_lm_prob = self.external_kwargs['mlm_args']
+
 
         documents = data
         document_text_string = ''.join(documents)
@@ -62,16 +64,16 @@ class NN_DataHelper(DataHelper):
             text = document_text_string[pos:pos + max_seq_length - 2]
             pos += len(text)
             document_texts.append(text)
-        #返回多个文档
+        # 返回多个文档
         document_nodes = []
         for text in document_texts:
-            node = make_mlm_wwm_sample(text, tokenizer,max_seq_length, rng, do_whole_word_mask, max_predictions_per_seq, masked_lm_prob)
+            node = make_mlm_wwm_sample(text, tokenizer, max_seq_length, rng, do_whole_word_mask,
+                                       max_predictions_per_seq, masked_lm_prob)
             document_nodes.append(node)
         return document_nodes
 
-
     # 读取文件
-    def on_get_corpus(self, files: typing.List, mode:str):
+    def on_get_corpus(self, files: typing.List, mode: str):
         D = []
         line_no = 0
         for input_file in files:
@@ -94,8 +96,7 @@ class NN_DataHelper(DataHelper):
                         print(D[-1])
         return D
 
-    @staticmethod
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -117,40 +118,40 @@ class NN_DataHelper(DataHelper):
         o['weight'] = o['weight'][:, :max_len]
         return o
 
-class MyTransformer(TransformerForMaskLM,with_pl=True):
-    def __init__(self,*args,**kwargs):
-        super(MyTransformer, self).__init__(*args,**kwargs)
-        self.loss_fct = CrossEntropyLoss(reduction='none',ignore_index=self.config.pad_token_id)
 
-    def compute_loss_mlm(self,y_trues,y_preds,weight):
+class MyTransformer(TransformerForMaskLM, with_pl=True):
+    def __init__(self, *args, **kwargs):
+        super(MyTransformer, self).__init__(*args, **kwargs)
+        self.loss_fct = CrossEntropyLoss(reduction='none', ignore_index=self.config.pad_token_id)
+
+    def compute_loss_mlm(self, y_trues, y_preds, weight):
         y_preds = torch.transpose(y_preds, 1, 2)
-        loss = self.loss_fct(y_preds,y_trues)
+        loss = self.loss_fct(y_preds, y_trues)
         loss = torch.sum(loss * weight, dtype=torch.float) / (torch.sum(weight, dtype=torch.float) + 1e-12)
         return loss.mean()
 
-    def compute_loss(self, *args,**batch) -> tuple:
-        labels,weight = None,None
+    def compute_loss(self, *args, **batch) -> tuple:
+        labels, weight = None, None
         if 'labels' in batch:
             weight = batch.pop('weight')
             labels = batch.pop('labels')
-        outputs = self.model(*args,**batch)
+        outputs = self.model(*args, **batch)
         logits = outputs[0]
-        if labels is not  None:
-            loss = self.compute_loss_mlm(labels,logits,weight)
-            outputs = (loss,logits,labels)
+        if labels is not None:
+            loss = self.compute_loss_mlm(labels, logits, weight)
+            outputs = (loss, logits, labels)
         else:
-            outputs = (logits, )
+            outputs = (logits,)
         return outputs
 
 
+if __name__ == '__main__':
 
-
-if __name__== '__main__':
-
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments,MlmDataArguments))
+    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments, MlmDataArguments))
     model_args, training_args, data_args, mlm_data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=5, every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
+    checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=5,
+                                          every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
@@ -165,52 +166,28 @@ if __name__== '__main__':
         strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
 
-    dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
-
     rng = random.Random(training_args.seed)
-    token_fn_args_dict = {
-        'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id,
-                  rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,
-                  mlm_data_args.masked_lm_prob,
-                  'train'),
-        'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id,
-                 rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,
-                 mlm_data_args.masked_lm_prob,
-                 'eval'),
-        'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id,
-                 rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,
-                 mlm_data_args.masked_lm_prob,
-                 'test')
-    }
+    dataHelper = NN_DataHelper(data_args.data_backend,mlm_args = (rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,mlm_data_args.masked_lm_prob))
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
-    dataHelper.train_files = []
-    dataHelper.eval_files = []
-    dataHelper.test_files = []
-    for i in range(mlm_data_args.dupe_factor):
-        # 缓存数据集
-        intermediate_name = data_args.intermediate_name + '_{}'.format(i)
-        if data_args.do_train:
-            dataHelper.train_files.append(
-                dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'],
-                                                  data_args,
-                                                  intermediate_name=intermediate_name, shuffle=True,
-                                                  mode='train'))
-        if data_args.do_eval:
-            dataHelper.eval_files.append(
-                dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'],
-                                                  data_args,
-                                                  intermediate_name=intermediate_name,
-                                                  shuffle=False,
-                                                  mode='eval'))
-        if data_args.do_test:
-            dataHelper.test_files.append(
-                dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'],
-                                                  data_args,
-                                                  intermediate_name=intermediate_name,
-                                                  shuffle=False,
-                                                  mode='test'))
+    # 缓存数据集if data_args.do_train:
+        dataHelper.make_dataset_with_args(data_args.train_file,
+                                          data_args,
+                                          shuffle=True,
+                                          mode='train', dupe_factor=mlm_data_args.dupe_factor)
+    if data_args.do_eval:
+        dataHelper.make_dataset_with_args(data_args.eval_file,
+                                          data_args,
+
+                                          shuffle=False,
+                                          mode='eval')
+    if data_args.do_test:
+        dataHelper.make_dataset_with_args(data_args.test_file,
+                                          data_args,
+
+                                          shuffle=False,
+                                          mode='test')
+
 
     train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                              process_index=trainer.global_rank, infinite=True,
@@ -221,8 +198,7 @@ if __name__== '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-
-    model = MyTransformer(config=config,model_args=model_args,training_args=training_args)
+    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
@@ -236,7 +212,7 @@ if __name__== '__main__':
             test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
                                        collate_fn=dataHelper.collate_fn)
         if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets,ckpt_path='./best.pt')
+            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
 
         if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets,ckpt_path='best.pt')
+            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')

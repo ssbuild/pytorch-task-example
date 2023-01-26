@@ -4,16 +4,15 @@
 import json
 import random
 import typing
+
 import numpy as np
-import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
-from deep_training.data_helper import load_tokenizer_and_config_with_args
-from transformers import HfArgumentParser, BertTokenizer
 from fastdatasets import gfile
+from transformers import HfArgumentParser, BertTokenizer
 
 train_info_args = {
-    'devices':  1,
+    'devices': 1,
     'data_backend': 'record',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
@@ -45,9 +44,12 @@ train_info_args = {
 
 class NN_DataHelper(DataHelper):
     # 切分词
-    def on_data_process(self, data: typing.Any, user_data: tuple):
+    def on_data_process(self, data: typing.Any, mode: str):
         tokenizer: BertTokenizer
-        tokenizer, max_seq_length, do_lower_case, label2id, mode = user_data
+        max_seq_length = self.max_seq_length_dict[mode]
+        tokenizer = self.tokenizer
+        do_lower_case = tokenizer.do_lower_case
+        label2id = self.label2id
         sentence, label_str = data
 
         o = tokenizer(sentence, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
@@ -72,27 +74,24 @@ class NN_DataHelper(DataHelper):
     # 读取标签
     def on_get_labels(self, files: typing.List[str]):
         file = files[0]
-        with open(file,mode='r',encoding='utf-8') as f:
+        with open(file, mode='r', encoding='utf-8') as f:
             lines = f.readlines()
 
         labels = []
         for line in lines:
-            line = line.replace('\r\n','').replace('\n','')
+            line = line.replace('\r\n', '').replace('\n', '')
             if not line:
                 continue
             labels.append(line)
         labels = list(set(labels))
         labels = sorted(labels)
-        label2id = {l:i for i,l in enumerate(labels)}
+        label2id = {l: i for i, l in enumerate(labels)}
         id2label = {i: l for i, l in enumerate(labels)}
-        self.label2id = label2id
-        self.id2label = id2label
-        return self.label2id,self.id2label
-
+        return label2id, id2label
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
-        assert len(files) >0
+        assert len(files) > 0
         D = []
         filenames = gfile.glob(files[0])
         for fname in filenames:
@@ -110,34 +109,22 @@ class NN_DataHelper(DataHelper):
         random.shuffle(D)
         return D
 
+
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-
     dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = load_tokenizer_and_config_with_args(dataHelper, model_args, training_args,
-                                                                                data_args)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
-    token_fn_args_dict = {
-        'train': (tokenizer, data_args.train_max_seq_length, model_args.do_lower_case, label2id, 'train'),
-        'eval': (tokenizer, data_args.eval_max_seq_length, model_args.do_lower_case, label2id, 'eval'),
-        'test': (tokenizer, data_args.test_max_seq_length, model_args.do_lower_case, label2id, 'test')
-    }
+    if data_args.do_train:
+        dataHelper.make_dataset_with_args(data_args.train_file, data_args,
+                                              shuffle=True, mode='train')
+    if data_args.do_eval:
 
-    N = 1
-    train_files, eval_files, test_files = [], [], []
-    for i in range(N):
-        intermediate_name = data_args.intermediate_name + '_{}'.format(i)
-        if data_args.do_train:
-            train_files.append(
-                dataHelper.make_dataset_with_args(data_args.train_file, token_fn_args_dict['train'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=True, mode='train'))
-        if data_args.do_eval:
-            eval_files.append(
-                dataHelper.make_dataset_with_args(data_args.eval_file, token_fn_args_dict['eval'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='eval'))
-        if data_args.do_test:
-            test_files.append(
-                dataHelper.make_dataset_with_args(data_args.test_file, token_fn_args_dict['test'], data_args,
-                                       intermediate_name=intermediate_name, shuffle=False, mode='test'))
+        dataHelper.make_dataset_with_args(data_args.eval_file, data_args,
+                                              shuffle=False, mode='eval')
+    if data_args.do_test:
+        dataHelper.make_dataset_with_args(data_args.test_file, data_args,
+                                              shuffle=False, mode='test')
+
