@@ -109,7 +109,9 @@ class NN_DataHelper(DataHelper):
         # 每1千首
         for idx, (type, title, paragraphs) in enumerate(sub_list):
             text = type + title + '<T>' + paragraphs
-            o = tokenizer.encode_plus(text=text,truncation=True, return_attention_mask=False,return_token_type_ids=False)
+            o = tokenizer.encode_plus(text=text,truncation=True,
+                                      return_attention_mask=False,
+                                      return_token_type_ids=False)
             if len(o['input_ids']) <= 3:
                 continue
             input_ids += o['input_ids'][1:-1]
@@ -121,22 +123,19 @@ class NN_DataHelper(DataHelper):
         pos = 0
         ds = []
         while pos < len(input_ids):
-            input_ids_ = [tokenizer.cls_token_id] + input_ids[pos: pos + max_seq_length - 2] + [tokenizer.sep_token_id]
+            input_ids_ = [tokenizer.cls_token_id] + input_ids[pos: pos + max_seq_length - 4] + [tokenizer.sep_token_id]
             pos += stride
 
             if len(input_ids_) <= 5:
                 continue
-            attention_mask_ = np.asarray([1] * len(input_ids_),dtype=np.int32)
             seqlen = np.asarray(len(input_ids_), dtype=np.int32)
             pad_len = max_seq_length - seqlen
             input_ids_ = np.asarray(input_ids_, dtype=np.int32)
             if pad_len:
                 pad_val = tokenizer.pad_token_id
                 input_ids_ = np.pad(input_ids_, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-                attention_mask_ = np.pad(attention_mask_, (0, pad_len), 'constant', constant_values=(0, 0))
             d = {
                 'input_ids': input_ids_,
-                'attention_mask': attention_mask_,
                 'seqlen': seqlen
             }
             ds.append(d)
@@ -209,10 +208,7 @@ class NN_DataHelper(DataHelper):
                 D.append(copy.deepcopy(sub))
         return D
 
-
-
-
-    def collate_fn(self,batch):
+    def collate_fn(self, batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -226,11 +222,38 @@ class NN_DataHelper(DataHelper):
 
         seqlens = o.pop('seqlen')
         max_len = torch.max(seqlens)
+
         bs = len(batch)
-        o['input_ids'] = o['input_ids'][:, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :max_len]
-        labels = torch.ones(size=(bs, max_len), dtype=torch.long) * -100
-        labels[:,:-1] = o['input_ids'][:,1:]
+        pad_token_id = self.tokenizer.pad_token_id
+        sep_token_id = self.tokenizer.sep_token_id
+        cls_token_id = self.tokenizer.cls_token_id
+
+        input_ids = torch.ones(size=(bs, max_len), dtype=torch.long) * pad_token_id
+        attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
+        decoder_input_ids = torch.ones(size=(bs, max_len), dtype=torch.long) * pad_token_id
+        decoder_attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
+
+        a_maxlen, b_maxlen = 0, 0
+        raw_input_ids = o.pop('input_ids')
+        for (seqlen, ids, a_ids, a_mask, b_ids, b_mask) in zip(seqlens, raw_input_ids, input_ids, attention_mask,
+                                                               decoder_input_ids, decoder_attention_mask):
+            seqlen = seqlen.squeeze(-1).numpy().tolist()
+            s = np.random.randint(2, seqlen - 1, dtype=np.int32).tolist()
+            a_ids[:s] = ids[:s]
+            a_ids[s] = sep_token_id
+            a_mask[:s + 1] = 1
+            b_ids[1:1 + seqlen - s] = ids[s:seqlen]
+            b_ids[0] = cls_token_id
+            b_mask[:seqlen - s + 1] = 1
+            a_maxlen = max(a_maxlen, s + 1)
+            b_maxlen = max(b_maxlen, seqlen - s + 1)
+
+        o['input_ids'] = input_ids[:, :a_maxlen]
+        o['attention_mask'] = attention_mask[:, :a_maxlen]
+        o['decoder_input_ids'] = decoder_input_ids[:, :b_maxlen]
+        o['decoder_attention_mask'] = decoder_attention_mask[:, :b_maxlen]
+        labels = torch.ones(size=(bs, b_maxlen), dtype=torch.long) * -100
+        labels[:, :-1] = o['decoder_input_ids'][:, 1:]
         o['labels'] = labels
         return o
 

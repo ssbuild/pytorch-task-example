@@ -46,32 +46,38 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         max_seq_length = self.max_seq_length_dict[mode]
         tokenizer = self.tokenizer
-       
-
-        max_target_length = self.data_args.max_target_length
-
 
         x = data
-        o1 = tokenizer.encode_plus(x[0] + x[1], max_length=max_seq_length, truncation=True, add_special_tokens=True, )
-        input_ids = np.asarray(o1['input_ids'], dtype=np.int64)
-        attention_mask = np.asarray(o1['attention_mask'], dtype=np.int64)
-        labels = copy.deepcopy(input_ids[1:])
-        seqlen = np.asarray(len(input_ids), dtype=np.int64)
-        pad_len = max_seq_length - seqlen
-        if pad_len > 0:
-            pad_val = tokenizer.pad_token_id
-            input_ids = np.pad(input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-            attention_mask = np.pad(attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
-            labels = np.pad(labels, (0, pad_len +1), 'constant', constant_values=(-100, 100))
+        def get_tokenizer_output(text):
+            o1 = tokenizer.encode_plus(text, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
 
+            input_ids = np.asarray(o1['input_ids'], dtype=np.int64)
+            attention_mask = np.asarray(o1['attention_mask'], dtype=np.int64)
+            seqlen = np.asarray(len(input_ids), dtype=np.int64)
+            pad_len = max_seq_length - seqlen
+            if pad_len > 0:
+                pad_val = tokenizer.pad_token_id
+                input_ids = np.pad(input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
+                attention_mask = np.pad(attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
 
+            out = {
+                'input_ids': input_ids,
+                'attention_mask': attention_mask,
+                'seqlen': seqlen,
+            }
+            return out
 
-        d = {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'labels': labels,
-            'seqlen': seqlen,
-        }
+        o1 = get_tokenizer_output(x[0])
+        o2 = get_tokenizer_output(x[1])
+
+        d = o1
+
+        d['decoder_input_ids'] = o2['input_ids']
+        d['decoder_attention_mask'] = o2['attention_mask']
+        d['decoder_seqlen'] = o2['seqlen']
+
+        labels = np.ones_like(d['decoder_input_ids']) * -100
+        labels[:-1] = d['decoder_input_ids'][1:]
         return d
 
     # 读取文件
@@ -99,12 +105,14 @@ class NN_DataHelper(DataHelper):
         for k in o:
             o[k] = torch.stack(o[k])
 
-        seqlens = o.pop('seqlen')
-        max_len = torch.max(seqlens)
 
-
+        max_len = torch.max(o.pop('seqlen'))
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
+
+        max_len = torch.max(o.pop('decoder_seqlen'))
+        o['decoder_input_ids'] = o['decoder_input_ids'][:, :max_len]
+        o['decoder_attention_mask'] = o['decoder_attention_mask'][:, :max_len]
         o['labels'] = o['labels'][:, :max_len]
         return o
 
