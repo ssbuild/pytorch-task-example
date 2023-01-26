@@ -162,13 +162,15 @@ if __name__ == '__main__':
                                     collate_fn=dataHelper.collate_fn,
                                     shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
-    model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
+    model = MyTransformer(ignore_index=config.pad_token_id,config=config, model_args=model_args, training_args=training_args)
 
     if train_datasets is not None:
         trainer.fit(model, train_dataloaders=train_datasets)
     else:
         # 加载权重
-        model = MyTransformer.load_from_checkpoint('./best.pt', config=config, model_args=model_args,
+        model = MyTransformer.load_from_checkpoint('./best.pt',
+                                                   ignore_index=config.pad_token_id,
+                                                   config=config, model_args=model_args,
                                                    training_args=training_args)
 
         eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
