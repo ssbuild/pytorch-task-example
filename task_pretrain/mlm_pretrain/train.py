@@ -1,122 +1,16 @@
 # -*- coding: utf-8 -*-
-import json
 import random
-import typing
 
 import torch
-from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
 from deep_training.nlp.models.transformer import TransformerForMaskLM
-from deep_training.utils.maskedlm import make_mlm_wwm_sample
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
-from transformers import BertTokenizerFast, HfArgumentParser, BertTokenizer
+from transformers import HfArgumentParser
 
-train_info_args = {
-    'devices': 1,
-    'data_backend': 'memory_raw',
-    'model_type': 'bert',
-    'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-    'do_train': True,
-    'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
-    'learning_rate': 5e-5,
-    'max_epochs': 3,
-    'train_batch_size': 10,
-    'test_batch_size': 2,
-    'adam_epsilon': 1e-8,
-    'gradient_accumulation_steps': 1,
-    'max_grad_norm': 1.0,
-    'weight_decay': 0,
-    'warmup_steps': 0,
-    'output_dir': './output',
-    'train_max_seq_length': 512,
-    'eval_max_seq_length': 512,
-    'test_max_seq_length': 512,
-    'do_lower_case': False,
-    'do_whole_word_mask': True,
-    'max_predictions_per_seq': 20,
-    'dupe_factor': 5,
-    'masked_lm_prob': 0.15
-}
-
-
-class NN_DataHelper(DataHelper):
-    # 切分词
-    def on_data_process(self, data: typing.Any, mode: typing.Any):
-        tokenizer: BertTokenizer
-        max_seq_length = self.max_seq_length_dict[mode]
-        tokenizer = self.tokenizer
-       
-
-        rng, do_whole_word_mask, max_predictions_per_seq, masked_lm_prob = self.external_kwargs['mlm_args']
-
-
-        documents = data
-        document_text_string = ''.join(documents)
-        document_texts = []
-        pos = 0
-        while pos < len(document_text_string):
-            text = document_text_string[pos:pos + max_seq_length - 2]
-            pos += len(text)
-            document_texts.append(text)
-        # 返回多个文档
-        document_nodes = []
-        for text in document_texts:
-            node = make_mlm_wwm_sample(text, tokenizer, max_seq_length, rng, do_whole_word_mask,
-                                       max_predictions_per_seq, masked_lm_prob)
-            document_nodes.append(node)
-        return document_nodes
-
-    # 读取文件
-    def on_get_corpus(self, files: typing.List, mode: str):
-        D = []
-        line_no = 0
-        for input_file in files:
-            with open(input_file, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-                for line in lines:
-                    jd = json.loads(line)
-                    if not jd:
-                        continue
-                    text = jd['content']
-                    docs = text.split('\n\n')
-                    D.append([doc for doc in docs if doc])
-                    line_no += 1
-
-                    if line_no > 1000:
-                        break
-
-                    if line_no % 10000 == 0:
-                        print('read_line', line_no)
-                        print(D[-1])
-        return D
-
-    def collate_fn(self,batch):
-        o = {}
-        for i, b in enumerate(batch):
-            if i == 0:
-                for k in b:
-                    o[k] = [torch.tensor(b[k])]
-            else:
-                for k in b:
-                    o[k].append(torch.tensor(b[k]))
-        for k in o:
-            o[k] = torch.stack(o[k])
-
-        max_len = torch.max(o.pop('seqlen'))
-
-        o['input_ids'] = o['input_ids'][:, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :max_len]
-        if 'token_type_ids' in o:
-            o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-        o['labels'] = o['labels'][:, :max_len]
-        o['weight'] = o['weight'][:, :max_len]
-        return o
-
+from data_utils import NN_DataHelper,train_info_args
 
 class MyTransformer(TransformerForMaskLM, with_pl=True):
     def __init__(self, *args, **kwargs):
