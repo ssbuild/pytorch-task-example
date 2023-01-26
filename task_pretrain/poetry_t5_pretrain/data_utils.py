@@ -230,7 +230,7 @@ class NN_DataHelper(DataHelper):
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         labels = torch.ones(size=(bs, max_len), dtype=torch.long) * -100
-        labels[:,1:] = o['input_ids'][:,:-1]
+        labels[:,:-1] = o['input_ids'][:,1:]
         o['labels'] = labels
         return o
 
