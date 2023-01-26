@@ -14,5 +14,6 @@
   "n_head": 12,
   "n_layer": 12,
   "n_positions": 1024,
+  "tokenizer_class": "BertTokenizer",
   "vocab_size": 16448
 }
