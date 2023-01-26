@@ -1,6 +1,6 @@
 # 诗词数据集
 
-https://github.com/ssbuild/poetry_tang
+https://github.com/ssbuild/chinese-poetry
 
 # 使用方法
 
