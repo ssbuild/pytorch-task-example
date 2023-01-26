@@ -17,8 +17,8 @@ train_info_args = {
     'model_type': 'gpt2',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-      'tokenizer_name': './config_gpt2',
-    'config_name': './config_gpt2/config.json',
+      'tokenizer_name': './gpt2_base_config',
+    'config_name': './gpt2_base_config/config.json',
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,

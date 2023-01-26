@@ -2,9 +2,9 @@
   "architectures": [
     "T5WithLMHeadModel"
   ],
-  "d_ff": 1024,
+  "d_ff": 2816,
   "d_kv": 64,
-  "d_model": 512,
+  "d_model": 1024,
   "decoder_start_token_id": 101,
   "dropout_rate": 0.1,
   "initializer_factor": 1.0,
@@ -12,11 +12,12 @@
   "layer_norm_epsilon": 1e-07,
   "model_type": "t5",
   "n_positions": 512,
-  "num_heads": 12,
-  "num_layers": 6,
-  "num_decoder_layers": 6,
+  "num_heads": 16,
+  "num_layers": 24,
+  "num_decoder_layers": 24,
   "output_past": true,
   "pad_token_id": 0,
-  "relative_attention_num_buckets": 64,
+  "relative_attention_num_buckets": 32,
+  "tokenizer_class": "BertTokenizer",
   "vocab_size": 16448
 }

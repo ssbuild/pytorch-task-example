@@ -18,8 +18,8 @@ train_info_args = {
     'model_type': 'gpt2',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-    'tokenizer_name': './config_gpt2',
-    'config_name': './config_gpt2/config.json',
+    'tokenizer_name': './gpt2_base_config',
+    'config_name': './gpt2_base_config/config.json',
     'do_train': True,
     'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
     'learning_rate': 5e-5,

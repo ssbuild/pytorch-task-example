@@ -9,9 +9,10 @@
   "attn_pdrop": 0.1,
   "initializer_range": 0.02,
   "layer_norm_epsilon": 1e-05,
-  "n_embd": 768,
-  "n_head": 12,
-  "n_layer": 12,
-  "n_positions": 512,
+  "n_ctx": 1024,
+  "n_embd": 1280,
+  "n_head": 20,
+  "n_layer": 36,
+  "n_positions": 1024,
   "vocab_size": 16448
 }

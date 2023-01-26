@@ -16,8 +16,8 @@ train_info_args = {
     'model_type': 't5',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-    'tokenizer_name': './config_t5',
-    'config_name': './config_t5/config.json',
+    'tokenizer_name': './t5_small_config',
+    'config_name': './t5_small_config/config.json',
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
