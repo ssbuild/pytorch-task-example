@@ -18,7 +18,7 @@ train_info_args = {
     'data_backend': 'memory_raw',
     'model_type': 't5',
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'tokenizer_name': './config_t5',
     'config_name': './config_t5/config.json',
     'do_train': True,
     'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
@@ -74,7 +74,7 @@ class NN_DataHelper(DataHelper):
             pad_val = tokenizer.pad_token_id
             decoder_input_ids = np.pad(decoder_input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
             decoder_attention_mask = np.pad(decoder_attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
-            labels = np.pad(labels, (0, pad_len), 'constant', constant_values=(0, 0))
+            labels = np.pad(labels, (0, pad_len+1), 'constant', constant_values=(0, 0))
 
         d = {
             'input_ids': input_ids,

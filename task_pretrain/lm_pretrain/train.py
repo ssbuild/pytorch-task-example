@@ -18,7 +18,7 @@ train_info_args = {
     'model_type': 'gpt2',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+    'tokenizer_name': './config_gpt2',
     'config_name': './config_gpt2/config.json',
     'do_train': True,
     'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
@@ -44,7 +44,7 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         max_seq_length = self.max_seq_length_dict[mode]
         tokenizer = self.tokenizer
-       
+
         x = data
         if isinstance(x, tuple):
             o = tokenizer(text=x[0], text_pair=x[1], max_length=max_seq_length, truncation=True,

@@ -2,8 +2,7 @@
 import numpy as np
 import torch
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
-from deep_training.nlp.losses.lm_loss import LM_loss
-from deep_training.nlp.models.transformer import TransformerForCausalLM
+from deep_training.nlp.models.transformer import TransformerForSeq2SeqLM
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
@@ -14,11 +13,11 @@ from data_utils import NN_DataHelper, data_conf
 train_info_args = {
     'devices': 1,
     'data_backend': 'record',
-    'model_type': 'gpt2',
+    'model_type': 't5',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-      'tokenizer_name': './config_gpt2',
-    'config_name': './config_gpt2/config.json',
+    'tokenizer_name': './config_t5',
+    'config_name': './config_t5/config.json',
     # 语料已经制作好，不需要在转换
     'convert_file': False,
     'do_train': True,
@@ -39,23 +38,10 @@ train_info_args = {
 }
 
 
-class MyTransformerLM(TransformerForCausalLM):
-    def __init__(self, *args, **kwargs):
-        super(MyTransformerLM, self).__init__(*args, **kwargs)
-        self.loss_fct = LM_loss(ignore_index=self.config.pad_token_id)
-
-    def compute_loss(self, *args, **batch) -> tuple:
-        labels = batch.pop('labels', None)
-        lm_logits = self.model(*args, **batch)[0]
-        if labels is not None:
-            loss = self.loss_fct(lm_logits, labels)
-            outputs = (loss, lm_logits, labels)
-        else:
-            outputs = (lm_logits,)
-        return outputs
 
 
-class MyTransformer(MyTransformerLM, with_pl=True):
+
+class MyTransformer(TransformerForSeq2SeqLM, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
 
@@ -74,12 +60,14 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         data_args = self.data_args
 
         # 简易测试生成
-        o = tokenizer.encode_plus(prefix, truncation=True, max_length=512,return_token_type_ids=False,return_attention_mask=False)
-        gen_ids, gen_tokens = [], []
+        o = tokenizer.encode_plus(prefix, truncation=True, max_length=512,return_attention_mask=False,
+                                  return_token_type_ids=False)
+        gen_ids, gen_tokens = [],[]
         batch = {}
         for i in range(data_args.max_target_length):
             batch.clear()
             batch['input_ids'] = [o['input_ids'] + gen_ids]
+
             for k in batch:
                 batch[k] = torch.tensor(batch[k], dtype=torch.int32)
             for k in batch:
@@ -149,6 +137,7 @@ if __name__ == '__main__':
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
+    config.decoder_start_token_id = tokenizer.cls_token_id
     # 额外参数
     checkpoint_callback.tokenizer = tokenizer
     checkpoint_callback.data_args = data_args

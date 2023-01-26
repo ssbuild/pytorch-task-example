@@ -108,8 +108,8 @@ class NN_DataHelper(DataHelper):
         input_ids = []
         # 每1千首
         for idx, (type, title, paragraphs) in enumerate(sub_list):
-            text = type + title + '<S>' + paragraphs
-            o = tokenizer.encode_plus(text, max_length=max_seq_length,truncation=True, return_attention_mask=False,return_token_type_ids=False)
+            text = type + title + '<T>' + paragraphs
+            o = tokenizer.encode_plus(text=text,truncation=True, return_attention_mask=False,return_token_type_ids=False)
             if len(o['input_ids']) <= 3:
                 continue
             input_ids += o['input_ids'][1:-1]
@@ -121,8 +121,7 @@ class NN_DataHelper(DataHelper):
         pos = 0
         ds = []
         while pos < len(input_ids):
-            input_ids_ = [tokenizer.cls_token_id] + input_ids[pos: pos + max_seq_length - 2] + [tokenizer.sep_token_id]
-            attention_mask_ = [1] * len(input_ids_)
+            input_ids_ = [tokenizer.cls_token_id] + input_ids[pos: pos + max_seq_length - 4] + [tokenizer.sep_token_id]
             pos += stride
 
             if len(input_ids_) <= 5:
@@ -130,14 +129,11 @@ class NN_DataHelper(DataHelper):
             seqlen = np.asarray(len(input_ids_), dtype=np.int32)
             pad_len = max_seq_length - seqlen
             input_ids_ = np.asarray(input_ids_, dtype=np.int32)
-            attention_mask_ = np.asarray(attention_mask_, dtype=np.int32)
             if pad_len:
                 pad_val = tokenizer.pad_token_id
                 input_ids_ = np.pad(input_ids_, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-                attention_mask_ = np.pad(attention_mask_, (0, pad_len), 'constant', constant_values=(0, 0))
             d = {
                 'input_ids': input_ids_,
-                'attention_mask': attention_mask_,
                 'seqlen': seqlen
             }
             ds.append(d)
@@ -210,6 +206,9 @@ class NN_DataHelper(DataHelper):
                 D.append(copy.deepcopy(sub))
         return D
 
+
+
+
     def collate_fn(self,batch):
         o = {}
         for i, b in enumerate(batch):
@@ -222,10 +221,40 @@ class NN_DataHelper(DataHelper):
         for k in o:
             o[k] = torch.stack(o[k])
 
-        max_len = torch.max(o.pop('seqlen'))
-        o['input_ids'] = o['input_ids'][:, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :max_len]
-        o['labels'] = torch.clone(o['input_ids'])
+        seqlens = o.pop('seqlen')
+        max_len = torch.max(seqlens)
+
+        bs = len(batch)
+        pad_token_id = self.tokenizer.pad_token_id
+        sep_token_id = self.tokenizer.sep_token_id
+        cls_token_id = self.tokenizer.cls_token_id
+
+        input_ids = torch.ones(size=(bs,max_len),dtype=torch.long) * pad_token_id
+        attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
+        decoder_input_ids = torch.ones(size=(bs, max_len), dtype=torch.long) * pad_token_id
+        decoder_attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
+
+        a_maxlen,b_maxlen = 0,0
+        raw_input_ids = o.pop('input_ids')
+        for (seqlen,ids,a_ids,a_mask,b_ids,b_mask) in zip(seqlens,raw_input_ids,input_ids,attention_mask,decoder_input_ids,decoder_attention_mask):
+            seqlen = seqlen.squeeze(-1).numpy().tolist()
+            s = np.random.randint(2, seqlen - 1, dtype=np.int32).tolist()
+            a_ids[:s] = ids[:s]
+            a_ids[s] = sep_token_id
+            a_mask[:s+1] = 1
+            b_ids[1:1+seqlen-s] = ids[s:seqlen]
+            b_ids[0] = cls_token_id
+            b_mask[:seqlen-s+1] = 1
+            a_maxlen = max(a_maxlen,s+1)
+            b_maxlen = max(b_maxlen,seqlen-s +1)
+
+        o['input_ids'] = input_ids[:, :a_maxlen]
+        o['attention_mask'] = attention_mask[:, :a_maxlen]
+        o['decoder_input_ids'] = decoder_input_ids[:, :b_maxlen]
+        o['decoder_attention_mask'] = decoder_attention_mask[:, :b_maxlen]
+        labels = torch.ones(size=(bs, b_maxlen), dtype=torch.long) * -100
+        labels[:,:-1] = o['decoder_input_ids'][:,1:]
+        o['labels'] = labels
         return o
 
 
@@ -236,10 +265,10 @@ if __name__ == '__main__':
     train_info_args = {
         'devices': 1,
         'data_backend': 'record',
-        'model_type': 'gpt2',
+        'model_type': 't5',
         # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-        'tokenizer_name': './config_gpt2',
-        'config_name': './config_gpt2/config.json',
+        'tokenizer_name': './config_t5',
+        'config_name': './config_t5/config.json',
         'do_train': True,
         'train_file': ','.join(train_files),
         'output_dir': './output',
@@ -251,7 +280,7 @@ if __name__ == '__main__':
 
     dataHelper = NN_DataHelper(data_args.data_backend)
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
-
+    config.decoder_start_token_id = tokenizer.cls_token_id
     # 缓存数据集
     if data_args.do_train:
         dataHelper.make_dataset_with_args(data_args.train_file,
