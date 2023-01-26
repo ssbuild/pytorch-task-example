@@ -44,8 +44,7 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         max_seq_length = self.max_seq_length_dict[mode]
         tokenizer = self.tokenizer
-        do_lower_case = tokenizer.do_lower_case
-        label2id = self.label2id
+       
         x = data
         if isinstance(x, tuple):
             o = tokenizer(text=x[0], text_pair=x[1], max_length=max_seq_length, truncation=True,

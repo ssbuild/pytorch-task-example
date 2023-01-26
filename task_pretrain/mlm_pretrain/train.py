@@ -50,8 +50,7 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         max_seq_length = self.max_seq_length_dict[mode]
         tokenizer = self.tokenizer
-        do_lower_case = tokenizer.do_lower_case
-        label2id = self.label2id
+       
 
         rng, do_whole_word_mask, max_predictions_per_seq, masked_lm_prob = self.external_kwargs['mlm_args']
 
@@ -170,10 +169,10 @@ if __name__ == '__main__':
     dataHelper = NN_DataHelper(data_args.data_backend,mlm_args = (rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,mlm_data_args.masked_lm_prob))
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
-    # 缓存数据集if data_args.do_train:
+    # 缓存数据集
+    if data_args.do_train:
         dataHelper.make_dataset_with_args(data_args.train_file,
-                                          data_args,
-                                          shuffle=True,
+                                          data_args,shuffle=True,
                                           mode='train', dupe_factor=mlm_data_args.dupe_factor)
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,

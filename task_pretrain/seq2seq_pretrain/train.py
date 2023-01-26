@@ -45,8 +45,7 @@ class NN_DataHelper(DataHelper):
         tokenizer: BertTokenizer
         max_seq_length = self.max_seq_length_dict[mode]
         tokenizer = self.tokenizer
-        do_lower_case = tokenizer.do_lower_case
-        label2id = self.label2id
+       
 
         max_target_length = self.data_args.max_target_length
 
@@ -167,7 +166,8 @@ if __name__ == '__main__':
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
 
 
-    # 缓存数据集if data_args.do_train:
+    # 缓存数据集
+    if data_args.do_train:
         dataHelper.make_dataset_with_args(data_args.train_file,
                                           data_args, shuffle=True,
                                           mode='train')

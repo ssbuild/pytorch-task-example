@@ -374,7 +374,8 @@ if __name__ == '__main__':
                                           })
 
 
-    # 缓存数据集if data_args.do_train:
+    # 缓存数据集
+    if data_args.do_train:
         dataHelper.make_dataset_with_args(data_args.train_file,
                                           data_args, shuffle=True,
                                           mode='train')
