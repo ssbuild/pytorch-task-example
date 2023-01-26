@@ -23,7 +23,7 @@ train_info_args = {
     'do_train': True,
     'train_file': './output/dataset_0-train.record',
     'max_epochs': 3,
-    'train_batch_size': 14,
+    'train_batch_size': 10,
     'eval_batch_size': 2,
     'test_batch_size': 2,
     'learning_rate': 5e-5,
