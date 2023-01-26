@@ -242,6 +242,7 @@ class NN_DataHelper(DataHelper):
 if __name__ == '__main__':
 
     train_files = gfile.glob('/data/nlp/nlp_train_data/poetry/*.record')
+    #保持预训练文件一致
     train_info_args = {
         'devices': 1,
         'data_backend': 'record',

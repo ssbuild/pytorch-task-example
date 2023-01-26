@@ -109,8 +109,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                    ('五律',''),
                    ('七律', '')
         ]
+        print('*' * 30)
         for prefix in prefixs:
-            print('*' * 30, prefix[0],prefix[1])
+            print(prefix[0],prefix[1])
             prefix = special[prefix[0]] + prefix[1]
             self.generate_text(trainer,pl_module,prefix)
 
