@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import copy
 import json
 import typing
 
@@ -51,39 +52,25 @@ class NN_DataHelper(DataHelper):
 
 
         x = data
-        o1 = tokenizer.encode_plus(x[0], max_length=max_seq_length, truncation=True, add_special_tokens=True, )
-        o2 = tokenizer.encode_plus(x[1], max_length=max_target_length, truncation=True, add_special_tokens=True, )
+        o1 = tokenizer.encode_plus(x[0] + x[1], max_length=max_seq_length, truncation=True, add_special_tokens=True, )
         input_ids = np.asarray(o1['input_ids'], dtype=np.int64)
         attention_mask = np.asarray(o1['attention_mask'], dtype=np.int64)
-
-        slen = np.asarray(len(input_ids), dtype=np.int64)
-        pad_len = max_seq_length - slen
+        labels = copy.deepcopy(input_ids[1:])
+        seqlen = np.asarray(len(input_ids), dtype=np.int64)
+        pad_len = max_seq_length - seqlen
         if pad_len > 0:
             pad_val = tokenizer.pad_token_id
             input_ids = np.pad(input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
             attention_mask = np.pad(attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
+            labels = np.pad(labels, (0, pad_len +1), 'constant', constant_values=(-100, 100))
 
-        decoder_input_ids = np.asarray(o2['input_ids'], dtype=np.int64)
-        labels = np.asarray(decoder_input_ids[1:], dtype=np.int64)
-        decoder_input_ids = np.asarray(decoder_input_ids[:-1], dtype=np.int64)
-        decoder_attention_mask = np.asarray([1] * len(decoder_input_ids), dtype=np.int64)
 
-        dlen = np.asarray(len(decoder_input_ids), dtype=np.int64)
-        pad_len = max_target_length - dlen
-        if pad_len > 0:
-            pad_val = tokenizer.pad_token_id
-            decoder_input_ids = np.pad(decoder_input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
-            decoder_attention_mask = np.pad(decoder_attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
-            labels = np.pad(labels, (0, pad_len+1), 'constant', constant_values=(0, 0))
 
         d = {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
-            'decoder_input_ids': decoder_input_ids,
-            'decoder_attention_mask': decoder_attention_mask,
             'labels': labels,
-            'slen': slen,
-            'dlen': dlen
+            'seqlen': seqlen,
         }
         return d
 
@@ -100,7 +87,7 @@ class NN_DataHelper(DataHelper):
                         break
         return D
 
-    def collate_fn(self,batch):
+    def collate_fn(self, batch):
         o = {}
         for i, b in enumerate(batch):
             if i == 0:
@@ -109,19 +96,16 @@ class NN_DataHelper(DataHelper):
             else:
                 for k in b:
                     o[k].append(torch.tensor(b[k]))
-
         for k in o:
             o[k] = torch.stack(o[k])
 
-        slen = torch.max(o.pop('slen'))
-        dlen = torch.max(o.pop('dlen'))
+        seqlens = o.pop('seqlen')
+        max_len = torch.max(seqlens)
 
-        o['input_ids'] = o['input_ids'][:, :slen]
-        o['attention_mask'] = o['attention_mask'][:, :slen]
 
-        o['decoder_input_ids'] = o['decoder_input_ids'][:, :dlen]
-        o['decoder_attention_mask'] = o['decoder_attention_mask'][:, :dlen]
-        o['labels'] = o['labels'][:, :dlen]
+        o['input_ids'] = o['input_ids'][:, :max_len]
+        o['attention_mask'] = o['attention_mask'][:, :max_len]
+        o['labels'] = o['labels'][:, :max_len]
         return o
 
 

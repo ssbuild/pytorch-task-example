@@ -67,6 +67,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         for i in range(data_args.max_target_length):
             batch.clear()
             batch['input_ids'] = [o['input_ids'] + gen_ids]
+            batch['decoder_input_ids'] = [o['decoder_input_ids'] + gen_ids]
 
             for k in batch:
                 batch[k] = torch.tensor(batch[k], dtype=torch.int32)
