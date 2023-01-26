@@ -111,6 +111,8 @@ class NN_DataHelper(DataHelper):
             o = tokenizer.encode_plus(text=type + title, text_pair=paragraphs, max_length=max_seq_length,
                                       truncation=True, return_attention_mask=False)
 
+            if len(o['input_ids']) <=3:
+                continue
             input_ids += o['input_ids'][1:-1]
             token_type_ids += o['token_type_ids'][1:-1]
             if idx != len(sub_list) - 1:
@@ -201,11 +203,9 @@ class NN_DataHelper(DataHelper):
                                     type = special['五律']
                                 elif length == 7:
                                     type = special['七律']
-                    else:
-                        type = data_type
 
                 paragraphs = ''.join(paragraphs)
-                if len(paragraphs) <= 10:
+                if len(paragraphs) == 0:
                     continue
                 # 每1千首为一组
                 if len(sub) < COUNT_PER_GROUP:
@@ -245,10 +245,10 @@ if __name__ == '__main__':
     train_info_args = {
         'devices': 1,
         'data_backend': 'record',
-        'model_type': 'bert',
-        'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
+        'model_type': 'gpt2',
+         # 'model_name_or_path': '/data/nlp/pre_models/torch/',
         'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-        'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
+        'config_name': './config_gpt2/config.json',
         'do_train': True,
         'train_file':  ','.join(train_files),
         'output_dir': './output',
