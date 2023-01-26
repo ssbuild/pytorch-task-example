@@ -126,7 +126,7 @@ class NN_DataHelper(DataHelper):
 
             if len(input_ids_) <= 5:
                 continue
-            attention_mask_ = [1] * len(input_ids_)
+            attention_mask_ = np.asarray([1] * len(input_ids_),dtype=np.int32)
             seqlen = np.asarray(len(input_ids_), dtype=np.int32)
             pad_len = max_seq_length - seqlen
             input_ids_ = np.asarray(input_ids_, dtype=np.int32)
