@@ -25,10 +25,8 @@ train_info_args = {
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
     'tokenizer_name': './t5_small_config',
     'config_name': './t5_small_config/config.json',
-    # 语料已经制作好，不需要在转换
-    'convert_file': False,
     'do_train': True,
-    'train_file': './output/dataset_0-train.record',
+    'train_file': gfile.glob('/data/nlp/nlp_train_data/poetry/*.record'),
     'max_epochs': 3,
     'train_batch_size': 10,
     'eval_batch_size': 2,
@@ -287,10 +285,6 @@ class NN_DataHelper(DataHelper):
 
 
 if __name__ == '__main__':
-    #制作数据集
-    train_info_args['convert_file'] = True
-    #语料源
-    train_info_args['train_file'] = gfile.glob('/data/nlp/nlp_train_data/poetry/*.record')
 
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
@@ -299,6 +293,7 @@ if __name__ == '__main__':
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
     config.decoder_start_token_id = tokenizer.cls_token_id
     # 缓存数据集
+    # 检测是否存在 output/dataset_0-train.record ，不存在则制作数据集
     if data_args.do_train:
         dataHelper.make_dataset_with_args(data_args.train_file,
                                           data_args, shuffle=True,
