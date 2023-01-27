@@ -247,16 +247,16 @@ class NN_DataHelper(DataHelper):
             o[k] = torch.stack(o[k])
 
         seqlens = o.pop('seqlen')
-        max_len = torch.max(seqlens)
+        max_len = torch.max(seqlens).numpy().tolist()
 
         bs = len(batch)
         pad_token_id = self.tokenizer.pad_token_id
         sep_token_id = self.tokenizer.sep_token_id
         cls_token_id = self.tokenizer.cls_token_id
 
-        input_ids = torch.ones(size=(bs, max_len), dtype=torch.long) * pad_token_id
+        input_ids = torch.full((bs, max_len),pad_token_id, dtype=torch.long)
         attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
-        decoder_input_ids = torch.ones(size=(bs, max_len), dtype=torch.long) * pad_token_id
+        decoder_input_ids = torch.full((bs, max_len),pad_token_id, dtype=torch.long)
         decoder_attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
 
         a_maxlen, b_maxlen = 0, 0

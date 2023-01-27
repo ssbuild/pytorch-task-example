@@ -77,7 +77,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                    ('当代', ''),
                    ('曲', ''),
                    ('五律', ''),
-                   ('七律', '')
+                   ('七律', ''),
+                   ('姓名', ''),
                    ]
         print('*' * 30)
         for prefix in prefixs:

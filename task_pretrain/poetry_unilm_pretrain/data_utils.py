@@ -134,7 +134,7 @@ class NN_DataHelper(DataHelper):
         input_ids = []
         # 每1千首
         for idx, (type, title, paragraphs) in enumerate(sub_list):
-            text = type + title + '<S>' + paragraphs
+            text = type + title + '<T>' + paragraphs
             o = tokenizer.encode_plus(text, max_length=max_seq_length,
                                       truncation=True, return_attention_mask=False, return_token_type_ids=False)
             if len(o['input_ids']) <= 3:
