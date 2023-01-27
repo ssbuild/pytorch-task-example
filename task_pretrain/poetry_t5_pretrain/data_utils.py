@@ -26,7 +26,8 @@ train_info_args = {
     'tokenizer_name': './t5_small_config',
     'config_name': './t5_small_config/config.json',
     'do_train': True,
-    'train_file':  gfile.glob('/data/nlp/nlp_train_data/poetry/*.record'),
+    #过滤诗集 poetry_85w_part1.record ，与唐诗从此重复
+    'train_file':  [_ for _ in gfile.glob('/data/nlp/nlp_train_data/poetry/*.record') if 'poetry_85w_part1.record' not in _],
     'max_epochs': 3,
     'train_batch_size': 10,
     'eval_batch_size': 2,
@@ -188,9 +189,8 @@ class NN_DataHelper(DataHelper):
 
             COUNT_PER_GROUP = 1000
             basename = os.path.basename(file)
-            if basename == 'poetry_85w_part1.record':  # 数据重合
-                continue
-            if basename == 'xm.record':  # 数据重合
+           
+            if basename == 'xm.record':  # 短数据，增大样本分组
                 COUNT_PER_GROUP = 10000
 
             sub = []
