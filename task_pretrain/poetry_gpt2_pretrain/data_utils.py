@@ -26,7 +26,7 @@ train_info_args = {
     'tokenizer_name': './gpt2_base_config',
     'config_name': './gpt2_base_config/config.json',
     'do_train': True,
-    #过滤诗集 poetry_85w_part1.record ，与唐诗宋词重复
+    # 过滤诗集 poetry_85w_part1.record ，与唐诗宋词重复
     'train_file':  [_ for _ in gfile.glob('/data/nlp/nlp_train_data/poetry/*.record') if 'poetry_85w_part1.record' not in _],
     'max_epochs': 3,
     'train_batch_size': 8,
