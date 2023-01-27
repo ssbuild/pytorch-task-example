@@ -26,7 +26,7 @@ train_info_args = {
     'tokenizer_name': './t5_small_config',
     'config_name': './t5_small_config/config.json',
     'do_train': True,
-    'train_file': gfile.glob('/data/nlp/nlp_train_data/poetry/*.record'),
+    'train_file':  gfile.glob('/data/nlp/nlp_train_data/poetry/*.record'),
     'max_epochs': 3,
     'train_batch_size': 10,
     'eval_batch_size': 2,

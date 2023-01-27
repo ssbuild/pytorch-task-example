@@ -20,7 +20,7 @@ train_info_args = {
     'tokenizer_name': './t5_small_config',
     'config_name': './t5_small_config/config.json',
     'do_train': True,
-    'train_file': '/data/nlp/nlp_train_data/thucnews/train.json',
+    'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
     'learning_rate': 5e-5,
     'max_epochs': 3,
     'train_batch_size': 10,

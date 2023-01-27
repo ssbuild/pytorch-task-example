@@ -26,7 +26,7 @@ train_info_args = {
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
     'do_train': True,
-    'train_file': gfile.glob('/data/nlp/nlp_train_data/poetry/*.record'),
+    'train_file':  gfile.glob('/data/nlp/nlp_train_data/poetry/*.record'),
     'max_epochs': 3,
     'train_batch_size': 8,
     'eval_batch_size': 2,
