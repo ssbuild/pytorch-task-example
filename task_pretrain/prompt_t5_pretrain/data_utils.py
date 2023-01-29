@@ -94,12 +94,6 @@ class NN_DataHelper(DataHelper):
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
         D = []
-
-        def poetry_parser(x):
-            x = str(x['node'].tolist(), encoding='utf-8')
-            x = json.loads(x)
-            return x
-
         #{"input": "我可以用以下的句子：“花呗在什么时间段可以用”，来替换这个句子：“什么时候用了花贝”，并且它们有相同的意思？。选项：是的，不是。答案：", "target": "不是", "type": "classify"}
         for file in files:
             with open(file,mode='r',encoding='utf-8',newline='\n') as f:
