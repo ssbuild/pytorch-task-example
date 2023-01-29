@@ -32,7 +32,7 @@ train_info_args = {
     'config_name': os.path.join(model_base_dir, 'config.json'),
     # 语料已经制作好，不需要在转换
     'convert_file': False,
-    'is_convert_onnx': False, # 转换onnx模型
+    'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     'do_eval': True,
     'do_test': False,
@@ -396,7 +396,7 @@ if __name__ == '__main__':
     model = MyTransformer(pooling=pooling, temperature=temperature, config=config, model_args=model_args,
                           training_args=training_args)
 
-    if not data_args.is_convert_onnx:
+    if not data_args.convert_onnx:
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)
 

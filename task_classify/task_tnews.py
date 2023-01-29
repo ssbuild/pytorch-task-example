@@ -23,7 +23,7 @@ train_info_args = {
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-    'is_convert_onnx': False, # 转换onnx模型
+    'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     'do_eval': True,
     'train_file': [ '/data/nlp/nlp_train_data/clue/tnews/train.json'],
@@ -259,7 +259,7 @@ if __name__ == '__main__':
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
-    if not data_args.is_convert_onnx:
+    if not data_args.convert_onnx:
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)
         else:

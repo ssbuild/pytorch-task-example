@@ -121,7 +121,7 @@ if __name__ == '__main__':
 
     model = MyTransformer(ignore_index=config.pad_token_id,config=config, model_args=model_args, training_args=training_args)
 
-    if not data_args.is_convert_onnx:
+    if not data_args.convert_onnx:
         # 加载数据
         train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                                  process_index=trainer.global_rank, infinite=True,

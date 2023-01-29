@@ -25,7 +25,7 @@ train_info_args = {
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
     'tokenizer_name': './t5_small_config',
     'config_name': './t5_small_config/config.json',
-    'is_convert_onnx': False, # 转换onnx模型
+    'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     'train_file':  [ '/data/nlp/nlp_train_data/clueprompt/finetune_train_examples.json'],
     'max_epochs': 3,

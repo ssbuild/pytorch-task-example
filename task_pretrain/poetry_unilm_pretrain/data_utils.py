@@ -25,7 +25,7 @@ train_info_args = {
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-    'is_convert_onnx': False, # 转换onnx模型
+    'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     # 过滤诗集 poetry_85w_part1.record ，与唐诗宋词重复
     'train_file':  [_ for _ in gfile.glob('/data/nlp/nlp_train_data/poetry/*.record') if 'poetry_85w_part1.record' not in _],

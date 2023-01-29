@@ -17,7 +17,7 @@ train_info_args = {
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-    'is_convert_onnx': False, # 转换onnx模型
+    'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
     'max_steps': 100000,

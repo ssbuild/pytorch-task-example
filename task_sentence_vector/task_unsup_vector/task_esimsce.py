@@ -29,7 +29,7 @@ train_info_args = {
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-    'is_convert_onnx': False, # 转换onnx模型
+    'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     'do_eval': True,
     # 'train_file': ['/data/nlp/nlp_train_data/clue/afqmc_public/train.json'],
@@ -388,7 +388,7 @@ if __name__ == '__main__':
     config.hidden_dropout_prob = 0.3
     model = MyTransformer(pooling=pooling, config=config, model_args=model_args, training_args=training_args)
 
-    if not data_args.is_convert_onnx:
+    if not data_args.convert_onnx:
         train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                                  process_index=trainer.global_rank, infinite=True,
                                                  with_record_iterable_dataset=False,
