@@ -34,7 +34,8 @@ train_info_args = {
     'config_name': os.path.join(model_base_dir, 'config.json'),
     # 语料已经制作好，不需要在转换
     'convert_file': False,
-    'do_train': True,
+    'is_convert_onnx': False, # 转换onnx模型
+    'do_train': True, 
     'do_eval': True,
     'do_test': False,
     'train_file': [ '/data/record/cse_0110/train.record'],
@@ -385,69 +386,35 @@ if __name__ == '__main__':
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,
-                                          data_args, shuffle=True,
-                                          mode='train')
+        dataHelper.make_dataset_with_args(data_args.train_file,data_args, shuffle=True,mode='train')
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file,
-                                          data_args,shuffle=False,
-                                          mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file, data_args,shuffle=False, mode='eval')
     if data_args.do_test:
         dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
 
-    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
-                                             process_index=trainer.global_rank, infinite=True,
-                                             with_record_iterable_dataset=True)
-    if train_datasets is not None:
-        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
-
     model = MyTransformer(pooling=pooling, config=config, model_args=model_args, training_args=training_args)
 
-    if train_datasets is not None:
-        trainer.fit(model, train_dataloaders=train_datasets)
+    if not data_args.is_convert_onnx:
+        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
+                                                 process_index=trainer.global_rank, infinite=True,
+                                                 with_record_iterable_dataset=True)
+        if train_datasets is not None:
+            train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                        collate_fn=dataHelper.collate_fn,
+                                        shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
+        if train_datasets is not None:
+            trainer.fit(model, train_dataloaders=train_datasets)
+        else:
+            eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+            test_datasets = dataHelper.load_sequential_sampler(dataHelper.test_files,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
+
+            if eval_datasets is not None:
+                trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
+
+            if test_datasets is not None:
+                trainer.test(model, dataloaders=test_datasets, ckpt_path='./best.pt')
     else:
-
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        test_datasets = dataHelper.load_dataset(dataHelper.test_files)
-        if eval_datasets is not None:
-            eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
-                                       collate_fn=dataHelper.collate_fn)
-        if test_datasets is not None:
-            test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
-                                       collate_fn=dataHelper.collate_fn)
-
-        if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
-
-        if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets, ckpt_path='./best.pt')
-
-        is_convert_onnx = True
-        # 是否转换模型
-        if is_convert_onnx:
-            input_sample = (
-                torch.ones(size=(1, 128), dtype=torch.int32),
-                torch.ones(size=(1, 128), dtype=torch.int32),
-            )
-            model.eval()
-            model.to('cuda')
-            input_names = ["input_ids", "attention_mask"]
-            out_names = ["pred_ids"]
-
-            model = MyTransformer.load_from_checkpoint('./best.pt', pooling=pooling, config=config,
-                                                       model_args=model_args, training_args=training_args)
-            model.to_onnx('./best.onnx',
-                          input_sample=input_sample,
-                          verbose=True,
-                          opset_version=10,
-                          do_constant_folding=True,
-                          input_names=input_names,
-                          output_names=out_names,
-                          dynamic_axes={"input_ids": [0, 1],
-                                        "attention_mask": [0, 1],
-                                        "pred_ids": [0, 1]
-                                        }
-                          )
+        model = MyTransformer.load_from_checkpoint('./best.pt', pooling=pooling, config=config,
+                                                   model_args=model_args, training_args=training_args)
+        model.convert_to_onnx('./best.onnx')

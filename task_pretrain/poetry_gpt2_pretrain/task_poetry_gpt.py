@@ -40,26 +40,22 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
 
-    def generate_text(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", prefix):
-        pl_module: MyTransformer
-        # 当前设备
-        device = torch.device('cuda:{}'.format(trainer.global_rank))
-        self.tokenizer: BertTokenizer
-        tokenizer = self.tokenizer
-        data_args = self.data_args
-
+    @staticmethod
+    def generate_text(pl_module: MyTransformer, prefix, tokenizer, max_target_length, device=0):
+        device = torch.device('cuda:{}'.format(device))
         # 简易测试生成
-        o = tokenizer.encode_plus(prefix, truncation=True, max_length=512,return_token_type_ids=False,return_attention_mask=False)
+        o = tokenizer.encode_plus(prefix, truncation=True, max_length=512, return_attention_mask=False,
+                                  return_token_type_ids=False)
         gen_ids, gen_tokens = [], []
         batch = {}
-        for i in range(data_args.max_target_length):
+        for i in range(max_target_length):
             batch.clear()
-            batch['input_ids'] = [o['input_ids'] + gen_ids]
+            batch['input_ids'] = [o['input_ids']]
+            batch['decoder_input_ids'] = [[tokenizer.cls_token_id] + gen_ids]
             for k in batch:
                 batch[k] = torch.tensor(batch[k], dtype=torch.int32)
             for k in batch:
                 batch[k] = batch[k].to(device)
-
             out = pl_module.test_step(batch, 0)
             logits = out['outputs'][0]
             logits = np.argmax(logits[:, -1], axis=-1)
@@ -69,13 +65,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             if token.startswith('##'):
                 token = token.replace('##', '')
             gen_tokens.append(token)
-
-        for k in batch:
-            batch[k] = batch[k].cpu()
-
-        print('input', prefix)
-        print('output', ''.join(gen_tokens))
-        print()
+        return ''.join(gen_tokens)
 
     def on_save_model(
             self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
@@ -96,10 +86,18 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                    ('姓名', ''),
                    ]
         print('*' * 30)
+        device = trainer.global_rank
+        self.tokenizer: BertTokenizer
+        tokenizer = self.tokenizer
+        data_args = self.data_args
         for prefix in prefixs:
             print(prefix[0], prefix[1])
             prefix = special[prefix[0]] + prefix[1]
-            self.generate_text(trainer, pl_module, prefix)
+            output = MySimpleModelCheckpoint.generate_text(pl_module, prefix, tokenizer,
+                                                           data_args.max_target_length, device=device)
+            print('input', prefix)
+            print('output', output)
+            print()
 
 
 if __name__ == '__main__':
@@ -137,67 +135,38 @@ if __name__ == '__main__':
                                           data_args,shuffle=True,
                                           mode='train')
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file,
-                                          data_args,shuffle=False,
-                                          mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file, data_args,shuffle=False, mode='eval')
     if data_args.do_test:
         dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
 
-    train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
-                                             process_index=trainer.global_rank, infinite=True,
-                                             with_load_memory=True,
-                                             with_record_iterable_dataset=False, )
-
-    if train_datasets is not None:
-        train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                    collate_fn=dataHelper.collate_fn,
-                                    shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
-    if train_datasets is not None:
-        trainer.fit(model, train_dataloaders=train_datasets)
+    if not data_args.is_convert_onnx:
+        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
+                                                 process_index=trainer.global_rank, infinite=True,
+                                                 with_load_memory=True,
+                                                 with_record_iterable_dataset=False, )
+
+        if train_datasets is not None:
+            train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
+                                        collate_fn=dataHelper.collate_fn,
+                                        shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+
+        if train_datasets is not None:
+            trainer.fit(model, train_dataloaders=train_datasets)
+        else:
+            eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+            test_datasets = dataHelper.load_sequential_sampler(dataHelper.test_files,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
+            if eval_datasets is not None:
+                trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
+
+            if test_datasets is not None:
+                trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')
+
     else:
         # 加载权重
         model = MyTransformer.load_from_checkpoint('./best.pt', config=config,
                                                    model_args=model_args,
                                                    training_args=training_args)
-
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        test_datasets = dataHelper.load_dataset(dataHelper.test_files)
-        if eval_datasets is not None:
-            eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
-                                       collate_fn=dataHelper.collate_fn)
-        if test_datasets is not None:
-            test_datasets = DataLoader(test_datasets, batch_size=training_args.test_batch_size,
-                                       collate_fn=dataHelper.collate_fn)
-        if eval_datasets is not None:
-            trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
-
-        if test_datasets is not None:
-            trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')
-
-        is_convert_onnx = True
-        # 是否转换模型
-        if is_convert_onnx:
-            input_sample = (
-                torch.ones(size=(1, 128), dtype=torch.int64),
-                torch.ones(size=(1, 128), dtype=torch.int64),
-            )
-            model.eval()
-            model.to('cuda')
-            input_names = ["input_ids", "attention_mask"]
-            out_names = ["pred_ids"]
-
-            model.to_onnx('./best.onnx',
-                          input_sample=input_sample,
-                          verbose=True,
-                          opset_version=14,
-                          do_constant_folding=True,
-                          input_names=input_names,
-                          output_names=out_names,
-                          dynamic_axes={"input_ids": [0, 1],
-                                        "attention_mask": [0, 1],
-                                        "pred_ids": [0, 1]
-                                        }
-                          )
+        model.convert_to_onnx('./best.onnx')

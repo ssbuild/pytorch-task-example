@@ -18,7 +18,8 @@ train_info_args = {
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
-    'do_train': True,
+    'is_convert_onnx': False, # 转换onnx模型
+    'do_train': True, 
     'do_eval': False,
     # 'train_file': gfile.glob('/data/nlp/nlp_train_data/lawcup2018/top122/process/*.json'),
     # 'eval_file': [ ''],

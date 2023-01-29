@@ -25,7 +25,8 @@ train_info_args = {
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
     'tokenizer_name': './t5_small_config',
     'config_name': './t5_small_config/config.json',
-    'do_train': True,
+    'is_convert_onnx': False, # 转换onnx模型
+    'do_train': True, 
     'train_file':  [ '/data/nlp/nlp_train_data/clueprompt/finetune_train_examples.json'],
     'max_epochs': 3,
     'train_batch_size': 10,
@@ -146,17 +147,13 @@ if __name__ == '__main__':
     # 缓存数据集
     # 检测是否存在 output/dataset_0-train.record ，不存在则制作数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,
-                                          data_args, shuffle=True,
-                                          mode='train')
+        dataHelper.make_dataset_with_args(data_args.train_file,data_args, shuffle=True,mode='train')
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,
                                            data_args, shuffle=False,
                                            mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,
-                                           data_args, shuffle=False,
-                                           mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file,data_args, shuffle=False,mode='test')
 
 
     def shuffle_records(record_filenames, outfile, compression_type='GZIP'):
