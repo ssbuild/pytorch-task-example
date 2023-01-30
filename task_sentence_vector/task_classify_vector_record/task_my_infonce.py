@@ -21,7 +21,8 @@ from transformers import HfArgumentParser, BertTokenizer
 
 # model_base_dir = '/data/torch/bert-base-chinese'
 # model_base_dir = '/data/nlp/pre_models/torch/bert/bert-base-chinese'
-model_base_dir = '/data/torch/chinese_fake_bert_wwm_ext'
+# model_base_dir = '/data/torch/chinese_fake_bert_wwm_ext'
+model_base_dir = '/data/torch/bert_base_wwm_pytorch_case'
 
 train_info_args = {
     'devices': torch.cuda.device_count(),
@@ -36,9 +37,9 @@ train_info_args = {
     'do_train': True, 
     'do_eval': True,
     'do_test': False,
-    'train_file': [ '/data/record/cse_0110/train_pos_neg.record'],
-    'eval_file': [ '/data/record/cse_0110/eval.record'],
-    'label_file': [ '/data/record/cse_0110/labels_122.txt'],
+    'train_file': [ '/data/record/cse_0130/normal/train_pos_neg.record'],
+    'eval_file': [ '/data/record/cse_0130/normal/eval.record'],
+    'label_file': [ '/data/record/cse_0130/labels_122.txt'],
     # 'train_file': [ '/data/nlp/nlp_train_data/clue/tnews/train_pos_neg.record'],
     # 'eval_file': [ '/data/nlp/nlp_train_data/clue/tnews/eval.record'],
     # 'label_file': [ '/data/nlp/nlp_train_data/clue/tnews/labels.txt'],
