@@ -129,6 +129,10 @@ def make_pos_neg_records(input_record_filenames, output_file, compression_type='
 
 
 if __name__ == '__main__':
-    example_files = './output/dataset_0-train.record'
-    output_train_file = os.path.join('./output/train_pos_neg.record')
+    example_files = '/data/record/cse_0130/train.record'
+    output_train_file = os.path.join('/data/record/cse_0130/output/train_pos_neg.record')
+    make_pos_neg_records(input_record_filenames=example_files, output_file=output_train_file, )
+
+    example_files = '/data/record/cse_0130/train_jieba.record'
+    output_train_file = os.path.join('/data/record/cse_0130/output/train_jieba_pos_neg.record')
     make_pos_neg_records(input_record_filenames=example_files, output_file=output_train_file, )
