@@ -50,8 +50,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         batch = {}
         for i in range(max_target_length):
             batch.clear()
-            batch['input_ids'] = [o['input_ids']]
-            batch['decoder_input_ids'] = [[tokenizer.cls_token_id] + gen_ids]
+            batch['input_ids'] = [o['input_ids'][:-1] + gen_ids  ]
             for k in batch:
                 batch[k] = torch.tensor(batch[k], dtype=torch.int32)
             for k in batch:
