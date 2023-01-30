@@ -32,7 +32,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         for i in range(max_target_length):
             batch.clear()
             batch['input_ids'] = [o['input_ids'] + gen_ids]
-            batch['token_type_ids'] = [o['token_type_ids'][:-1] + [1] * len(gen_ids) ]
+            batch['token_type_ids'] = [o['token_type_ids'] + [1] * len(gen_ids) ]
             for k in batch:
                 batch[k] = torch.tensor(batch[k], dtype=torch.int32)
             for k in batch:
@@ -47,6 +47,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 token = token.replace('##', '')
             gen_tokens.append(token)
         return ''.join(gen_tokens)
+
 
     def on_save_model(
             self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
@@ -79,6 +80,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             print('input', prefix)
             print('output', output)
             print()
+
 
 
 if __name__ == '__main__':

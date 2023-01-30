@@ -66,6 +66,29 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             gen_tokens.append(token)
         return ''.join(gen_tokens)
 
+    # @staticmethod
+    # def generate_text_huggingface(pl_module: MyTransformer, prefix, tokenizer, max_target_length, device=0):
+    #     device = torch.device('cuda:{}'.format(device))
+    #     # 简易测试生成
+    #     o = tokenizer.encode_plus(prefix, truncation=True, max_length=512, return_attention_mask=False,
+    #                               return_token_type_ids=False)
+    #
+    #
+    #     input_ids = o['input_ids']
+    #     input_ids = torch.tensor(input_ids, dtype=torch.int32,device = device).unsqueeze(0)
+    #     output =  pl_module.model.model.generate(input_ids,
+    #                max_length=max_target_length,
+    #                bos_token_id = tokenizer.cls_token_id)
+    #
+    #     gen_ids, gen_tokens = [], []
+    #     for logits in output[0]:
+    #         gen_ids.append(logits)
+    #         token = tokenizer._convert_id_to_token(logits)
+    #         if token.startswith('##'):
+    #             token = token.replace('##', '')
+    #         gen_tokens.append(token)
+    #     return ''.join(gen_tokens)
+
     def on_save_model(
             self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
@@ -99,6 +122,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             print()
 
 
+
+
 if __name__ == '__main__':
 
 
@@ -106,7 +131,7 @@ if __name__ == '__main__':
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
     # 保存最小loss模型
     checkpoint_callback = MySimpleModelCheckpoint(monitor="loss",
-                                                  every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
+                                                  every_n_train_steps=100 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
