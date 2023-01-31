@@ -193,4 +193,5 @@ if __name__ == '__main__':
         model = MyTransformer.load_from_checkpoint('./best.pt', config=config,
                                                    model_args=model_args,
                                                    training_args=training_args)
+
         model.convert_to_onnx('./best.onnx')

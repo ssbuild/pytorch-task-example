@@ -150,5 +150,17 @@ if __name__ == '__main__':
                                                    ignore_index=config.pad_token_id,
                                                    config=config, model_args=model_args,
                                                    training_args=training_args)
-        model.convert_to_onnx('./best.onnx')
+        input_sample = (
+                           ("input_ids", torch.ones(size=(1, 128), dtype=torch.int64)),
+                           ("token_type_ids", torch.ones(size=(1, 128), dtype=torch.int64)),
+                       )
+        input_names = ("input_ids", "token_type_ids")
+        output_names = ("pred_ids",)
+        dynamic_axes = None or {"input_ids": [0, 1], "token_type_ids": [0, 1], "pred_ids": [0, 1]}
+        model.convert_to_onnx('./best.onnx',
+                              input_sample=input_sample,
+                              input_names=input_names,
+                              output_names=output_names,
+                              dynamic_axes=dynamic_axes)
+
 
