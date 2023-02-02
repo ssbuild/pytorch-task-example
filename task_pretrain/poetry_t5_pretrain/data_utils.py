@@ -222,7 +222,7 @@ class NN_DataHelper(DataHelper):
                                 elif length == 7:
                                     type = special['七律']
 
-                paragraphs = ''.join(paragraphs)
+                paragraphs = '<n>'.join(paragraphs)
                 if len(paragraphs) == 0:
                     continue
                 # 每1千首为一组

@@ -175,7 +175,8 @@ class NN_DataHelper(DataHelper):
             print(ds[0])
         return ds
 
-    # 读取文件
+        # 读取文件
+
     def on_get_corpus(self, files: typing.List, mode: str):
         D = []
 
@@ -194,7 +195,7 @@ class NN_DataHelper(DataHelper):
 
             COUNT_PER_GROUP = 1000
             basename = os.path.basename(file)
-           
+
             if basename == 'xm.record':  # 短数据，增大样本分组
                 COUNT_PER_GROUP = 10000
 
@@ -226,7 +227,7 @@ class NN_DataHelper(DataHelper):
                                 elif length == 7:
                                     type = special['七律']
 
-                paragraphs = ''.join(paragraphs)
+                paragraphs = '<n>'.join(paragraphs)
                 if len(paragraphs) == 0:
                     continue
                 # 每1千首为一组
