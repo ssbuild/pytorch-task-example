@@ -151,8 +151,8 @@ if __name__ == '__main__':
                                                    config=config, model_args=model_args,
                                                    training_args=training_args)
         input_sample = (
-                           ("input_ids", torch.ones(size=(1, 128), dtype=torch.int64)),
-                           ("token_type_ids", torch.ones(size=(1, 128), dtype=torch.int64)),
+                           ("input_ids", torch.ones(size=(1, 128), dtype=torch.int32)),
+                           ("token_type_ids", torch.ones(size=(1, 128), dtype=torch.int32)),
                        )
         input_names = ("input_ids", "token_type_ids")
         output_names = ("pred_ids",)
