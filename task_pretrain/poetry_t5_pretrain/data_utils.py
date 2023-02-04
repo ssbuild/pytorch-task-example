@@ -23,14 +23,14 @@ train_info_args = {
     'model_type': 't5',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-    'tokenizer_name': './t5_small_config',
-    'config_name': './t5_small_config/config.json',
+    'tokenizer_name': './t5_small_ex_config',
+    'config_name': './t5_small_ex_config/config.json',
     'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     # 过滤诗集 poetry_85w_part1.record ，与唐诗宋词重复
     'train_file':  [_ for _ in gfile.glob('/data/nlp/nlp_train_data/poetry/*.record') if 'poetry_85w_part1.record' not in _],
     'max_epochs': 3,
-    'train_batch_size': 10,
+    'train_batch_size': 8,
     'eval_batch_size': 2,
     'test_batch_size': 2,
     'learning_rate': 5e-5,
@@ -97,6 +97,13 @@ data_conf = {
         "近现代": '[unused22]',
         "近现代末当代初": '[unused22]',
         "当代": '[unused22]',
+        "伤感网名": '[unused23]',
+        "英文网名": '[unused24]',
+        "女生网名": '[unused25]',
+        "情侣网名": '[unused26]',
+        "男生网名": '[unused27]',
+        "搞笑网名": '[unused28]',
+
     }
 }
 
