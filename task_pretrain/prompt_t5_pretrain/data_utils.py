@@ -75,12 +75,14 @@ class NN_DataHelper(DataHelper):
 
         decoder_input_ids = np.asarray(o2['input_ids'], dtype=np.int64)
         decoder_attention_mask = np.asarray(o2['attention_mask'], dtype=np.int64)
+        labels = np.asarray(o2['input_ids'][1:], dtype=np.int64)
         decoder_seqlen = np.asarray(len(decoder_input_ids), dtype=np.int64)
         pad_len = max_seq_length - decoder_seqlen
         if pad_len > 0:
             pad_val = tokenizer.pad_token_id
             decoder_input_ids = np.pad(decoder_input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
             decoder_attention_mask = np.pad(decoder_attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
+            labels = np.pad(labels, (0, pad_len+1), 'constant', constant_values=(-100, -100))
 
         d = {
             'input_ids': input_ids,
@@ -88,7 +90,8 @@ class NN_DataHelper(DataHelper):
             'seqlen': seqlen,
             'decoder_input_ids': decoder_input_ids,
             'decoder_attention_mask': decoder_attention_mask,
-            'decoder_seqlen': decoder_seqlen
+            'decoder_seqlen': decoder_seqlen,
+            'labels':labels
         }
         return d
 
@@ -130,9 +133,7 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         o['decoder_input_ids'] = o['decoder_input_ids'][:, :decoder_seqlen]
         o['decoder_attention_mask'] =  o['decoder_attention_mask'][:, :decoder_seqlen]
-        labels = torch.full(o['decoder_input_ids'].size(),-100, dtype=torch.long)
-        labels[:, :-1] = o['decoder_input_ids'][:, 1:]
-        o['labels'] = labels
+        o['labels'] =  o['labels'][:, :decoder_seqlen]
         return o
 
 

@@ -266,19 +266,21 @@ class NN_DataHelper(DataHelper):
         attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
         decoder_input_ids = torch.full((bs, max_len),pad_token_id, dtype=torch.long)
         decoder_attention_mask = torch.zeros(size=(bs, max_len), dtype=torch.long)
+        labels = torch.full((bs, max_len), -100, dtype=torch.long)
 
         a_maxlen, b_maxlen = 0, 0
         raw_input_ids = o.pop('input_ids')
-        for (seqlen, ids, a_ids, a_mask, b_ids, b_mask) in zip(seqlens, raw_input_ids, input_ids, attention_mask,
-                                                               decoder_input_ids, decoder_attention_mask):
+        for (seqlen, ids, a_ids, a_mask, b_ids, b_mask,label) in zip(seqlens, raw_input_ids, input_ids, attention_mask,
+                                                               decoder_input_ids, decoder_attention_mask,labels):
             seqlen = seqlen.squeeze(-1).numpy().tolist()
             s = np.random.randint(2, seqlen - 1, dtype=np.int32).tolist()
             a_ids[:s] = ids[:s]
             a_ids[s] = sep_token_id
             a_mask[:s + 1] = 1
-            b_ids[1:1 + seqlen - s] = ids[s:seqlen]
             b_ids[0] = cls_token_id
+            b_ids[1:1 + seqlen - s] = ids[s:seqlen]
             b_mask[:seqlen - s + 1] = 1
+            label[:seqlen - s] = b_ids[1:1 + seqlen - s]
             a_maxlen = max(a_maxlen, s + 1)
             b_maxlen = max(b_maxlen, seqlen - s + 1)
 
@@ -286,9 +288,7 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = attention_mask[:, :a_maxlen]
         o['decoder_input_ids'] = decoder_input_ids[:, :b_maxlen]
         o['decoder_attention_mask'] = decoder_attention_mask[:, :b_maxlen]
-        labels = torch.full((bs, b_maxlen),-100, dtype=torch.long)
-        labels[:, :-1] = o['decoder_input_ids'][:, 1:]
-        o['labels'] = labels
+        o['labels'] = labels[:, :b_maxlen]
         return o
 
 
