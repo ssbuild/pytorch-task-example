@@ -88,7 +88,8 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
     # 保存最小loss模型
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="loss",
+    checkpoint_callback = MySimpleModelCheckpoint(
+        # monitor="loss",
                                                   every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
