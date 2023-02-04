@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import os
+
 import numpy as np
 import torch
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
@@ -137,8 +139,11 @@ if __name__ == '__main__':
                                         collate_fn=dataHelper.collate_fn,
                                         shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
+        ckpt_path = './best.pt'
+        if not os.path.exists(ckpt_path):
+            ckpt_path = None
         if train_datasets is not None:
-            trainer.fit(model, train_dataloaders=train_datasets)
+            trainer.fit(model, train_dataloaders=train_datasets, ckpt_path=ckpt_path)
         else:
             eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
             test_datasets = dataHelper.load_sequential_sampler(dataHelper.test_files,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
