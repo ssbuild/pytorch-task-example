@@ -270,10 +270,17 @@ class NN_DataHelper(DataHelper):
 
         a_maxlen, b_maxlen = 0, 0
         raw_input_ids = o.pop('input_ids')
+
+
+        stride = data_conf['stride']
         for (seqlen, ids, a_ids, a_mask, b_ids, b_mask,label) in zip(seqlens, raw_input_ids, input_ids, attention_mask,
                                                                decoder_input_ids, decoder_attention_mask,labels):
             seqlen = seqlen.squeeze(-1).numpy().tolist()
-            s = np.random.randint(2, seqlen - 1, dtype=np.int32).tolist()
+            start = stride if seqlen -1 > stride else 2
+            end = (seqlen - 1) / 2
+            if end < start:
+                end = start + 1
+            s = np.random.randint(start , end, dtype=np.int32).tolist()
             a_ids[:s] = ids[:s]
             a_ids[s] = sep_token_id
             a_mask[:s + 1] = 1
