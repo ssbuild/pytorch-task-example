@@ -278,7 +278,7 @@ class NN_DataHelper(DataHelper):
             seqlen = seqlen.squeeze(-1).numpy().tolist()
             start = stride if seqlen -1 > stride else 2
             end = (seqlen - 1) / 2
-            if end < start:
+            if end <= start:
                 end = start + 1
             s = np.random.randint(start , end, dtype=np.int32).tolist()
             a_ids[:s] = ids[:s]
