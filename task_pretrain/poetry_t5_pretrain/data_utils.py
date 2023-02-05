@@ -276,10 +276,10 @@ class NN_DataHelper(DataHelper):
         for (seqlen, ids, a_ids, a_mask, b_ids, b_mask,label) in zip(seqlens, raw_input_ids, input_ids, attention_mask,
                                                                decoder_input_ids, decoder_attention_mask,labels):
             seqlen = seqlen.squeeze(-1).numpy().tolist()
-            start = stride if seqlen -1 > stride else 2
-            end = (seqlen - 1) // 2
+            start = (seqlen - 1) // 2
+            end = (seqlen - 1)
             if end <= start:
-                end = start + 1
+                start = end -1
             s = np.random.randint(start , end, dtype=np.int32).tolist()
             a_ids[:s] = ids[:s]
             a_ids[s] = sep_token_id
