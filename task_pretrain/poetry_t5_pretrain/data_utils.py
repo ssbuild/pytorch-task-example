@@ -277,7 +277,7 @@ class NN_DataHelper(DataHelper):
                                                                decoder_input_ids, decoder_attention_mask,labels):
             seqlen = seqlen.squeeze(-1).numpy().tolist()
             start = stride if seqlen -1 > stride else 2
-            end = (seqlen - 1) / 2
+            end = (seqlen - 1) // 2
             if end <= start:
                 end = start + 1
             s = np.random.randint(start , end, dtype=np.int32).tolist()
