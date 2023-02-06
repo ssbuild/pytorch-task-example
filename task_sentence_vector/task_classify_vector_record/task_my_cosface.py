@@ -289,6 +289,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self, *args, **kwargs):
         super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
+        self.last_weight_file = './last.pt'
 
     def on_save_model(
             self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
@@ -368,6 +369,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
 
+        logging.info('save last {}, {}\n'.format(f1, self.last_weight_file))
+        trainer.save_checkpoint(self.last_weight_file)
+
 
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
@@ -404,6 +408,11 @@ if __name__ == '__main__':
     model = MyTransformer(pooling=pooling, config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
+        # 加载训练权重
+        if os.path.exists('./best.pt'):
+            model = MyTransformer.load_from_checkpoint('./best.pt', pooling=pooling, config=config,
+                                                       model_args=model_args, training_args=training_args)
+
         train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
                                                  process_index=trainer.global_rank, infinite=True,
                                                  with_record_iterable_dataset=True)

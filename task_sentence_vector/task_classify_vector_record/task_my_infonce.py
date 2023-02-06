@@ -37,8 +37,8 @@ train_info_args = {
     'do_train': True, 
     'do_eval': True,
     'do_test': False,
-    'train_file': [ '/data/record/cse_0130/normal/train_pos_neg.record'],
-    'eval_file': [ '/data/record/cse_0130/normal/eval.record'],
+    'train_file': [ '/data/record/cse_0130/jieba/train_jieba_pos_neg.record'],
+    'eval_file': [ '/data/record/cse_0130/jieba/eval_jieba.record'],
     'label_file': [ '/data/record/cse_0130/labels_122.txt'],
     # 'train_file': [ '/data/nlp/nlp_train_data/clue/tnews/train_pos_neg.record'],
     # 'eval_file': [ '/data/nlp/nlp_train_data/clue/tnews/eval.record'],
@@ -275,6 +275,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     def __init__(self, *args, **kwargs):
         super(MySimpleModelCheckpoint, self).__init__(*args, **kwargs)
         self.weight_file = './best.pt'
+        self.last_weight_file = './last.pt'
 
     def on_save_model(
             self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
@@ -354,6 +355,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
 
+        logging.info('save last {}, {}\n'.format(f1, self.last_weight_file))
+        trainer.save_checkpoint(self.last_weight_file)
+
 
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
@@ -398,6 +402,14 @@ if __name__ == '__main__':
                           training_args=training_args)
 
     if not data_args.convert_onnx:
+        #加载训练权重
+        if os.path.exists('./best.pt'):
+            model = MyTransformer.load_from_checkpoint('./best.pt', pooling=pooling,
+                                                       temperature=temperature,
+                                                       config=config, model_args=model_args,
+                                                       training_args=training_args)
+
+
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)
 
