@@ -19,7 +19,6 @@
 - task_custom_muti_gpu 更多自定义训练操作，例如多卡训练例子， 模型转换onnx 等一些列自定义操作
 
 ## 对抗训练就在配置里增加一个选项
-
     'adv': {
         'mode': 'fgm', # None, fgm, fgsm_local, fgsm(不推荐), pgd, free_local, free(不推荐)
         'emb_name': 'embedding',
@@ -28,6 +27,9 @@
         'alpha': 0.5,  # pgd,fgsm
         'epsilon': 0.5,  # pgd,fgm
     }
+
+## 层次分解位置编码，让BERT可以处理超长文本
+    'hierarchical_position':  0.4 
 
 ## 多卡训练策略 strategy
 
