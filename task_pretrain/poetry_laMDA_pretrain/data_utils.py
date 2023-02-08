@@ -12,6 +12,7 @@ import typing
 import numpy as np
 import torch
 from deep_training.data_helper import DataHelper, ModelArguments, TrainingArguments, DataArguments
+from deep_training.nlp.models.laMDA import LaMDAConfig
 from deep_training.utils.func import is_chinese_char
 from fastdatasets.record import load_dataset as Loader, RECORD, WriterObject, gfile
 from tqdm import tqdm
@@ -23,8 +24,8 @@ train_info_args = {
     'model_type': 't5',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
-    'tokenizer_name': './t5_base_config',
-    'config_name': './t5_base_config/config.json',
+    'tokenizer_name': './laMDA_base_config',
+    'config_name': './laMDA_base_config/config.json',
     'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     # 过滤诗集 poetry_85w_part1.record ，与唐诗宋词重复
@@ -271,19 +272,17 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
+    dataHelper = NN_DataHelper(model_args, training_args, data_args)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(config_class_name=LaMDAConfig)
 
     # 缓存数据集
     # 检测是否存在 output/dataset_0-train.record ，不存在则制作数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,data_args, shuffle=True,mode='train')
+        dataHelper.make_dataset_with_args(data_args.train_file, shuffle=True,mode='train')
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file,
-                                           data_args, shuffle=False,
-                                           mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file, shuffle=False,mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,data_args, shuffle=False,mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file, shuffle=False,mode='test')
 
 
     def shuffle_records(record_filenames, outfile, compression_type='GZIP'):

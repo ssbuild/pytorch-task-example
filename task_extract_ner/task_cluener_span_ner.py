@@ -51,8 +51,8 @@ with_mutilabel = False
 
 
 class NN_DataHelper(DataHelper):
-    def __init__(self, with_mutilabel, backend, *args, **kwargs):
-        super(NN_DataHelper, self).__init__(backend, *args, **kwargs)
+    def __init__(self, with_mutilabel, *args, **kwargs):
+        super(NN_DataHelper, self).__init__(*args, **kwargs)
         self.with_mutilabel = with_mutilabel
 
     eval_labels = []
@@ -290,17 +290,16 @@ if __name__ == '__main__':
         strategy='ddp' if torch.cuda.device_count() > 1 else None,
     )
     # with_mutilabel 是否多标签
-    dataHelper = NN_DataHelper(with_mutilabel, data_args.data_backend)
-    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args,
-                                                                                 data_args)
+    dataHelper = NN_DataHelper(with_mutilabel, model_args, training_args, data_args)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config()
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,data_args, shuffle=True,mode='train')
+        dataHelper.make_dataset_with_args(data_args.train_file, shuffle=True,mode='train')
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file, data_args,shuffle=False, mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False, mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file,shuffle=False,mode='test')
 
 
     model = MyTransformer(dataHelper.eval_labels, with_mutilabel=with_mutilabel, config=config, model_args=model_args,

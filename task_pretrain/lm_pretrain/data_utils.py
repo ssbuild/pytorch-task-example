@@ -111,15 +111,15 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    dataHelper = NN_DataHelper(data_args.data_backend)
-    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
+    dataHelper = NN_DataHelper(model_args, training_args, data_args)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config()
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,data_args, shuffle=True,mode='train')
+        dataHelper.make_dataset_with_args(data_args.train_file, shuffle=True,mode='train')
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,
                                           data_args, shuffle=False,
                                           mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file, data_args, shuffle=False, mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file, shuffle=False, mode='test')

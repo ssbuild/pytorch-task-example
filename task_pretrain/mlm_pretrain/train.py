@@ -60,18 +60,16 @@ if __name__ == '__main__':
     )
 
     rng = random.Random(training_args.seed)
-    dataHelper = NN_DataHelper(data_args.data_backend,mlm_args = (rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,mlm_data_args.masked_lm_prob))
-    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(model_args, training_args, data_args)
+    dataHelper = NN_DataHelper(model_args, training_args, data_args,mlm_args = (rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,mlm_data_args.masked_lm_prob))
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config()
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,
-                                          data_args,shuffle=True,
-                                          mode='train', dupe_factor=mlm_data_args.dupe_factor)
+        dataHelper.make_dataset_with_args(data_args.train_file,shuffle=True,mode='train', dupe_factor=mlm_data_args.dupe_factor)
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file,data_args,shuffle=False,mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False,mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,data_args,shuffle=False,mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file,shuffle=False,mode='test')
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
