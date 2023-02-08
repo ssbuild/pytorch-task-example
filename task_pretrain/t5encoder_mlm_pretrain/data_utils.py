@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 # @Time:  3:09
-# @Author:XIE392
 # @File：data_utils.py
 import json
 import random
@@ -15,16 +14,17 @@ from transformers import BertTokenizer, HfArgumentParser
 train_info_args = {
     'devices': 1,
     'data_backend': 'record',
-    'model_type': 'bert',
-    'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
-    'config_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese/config.json',
+    'model_type': 't5',
+    # 预训练模型路径 , 从0训练，则置空
+    # 'model_name_or_path': '/data/nlp/pre_models/torch/',
+    'tokenizer_name': './t5_base_config',
+    'config_name': './t5_base_config/config.json',
     'convert_onnx': False, # 转换onnx模型
     'do_train': True, 
     'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
     'learning_rate': 5e-5,
     'max_epochs': 3,
-    'train_batch_size': 10,
+    'train_batch_size': 8,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,

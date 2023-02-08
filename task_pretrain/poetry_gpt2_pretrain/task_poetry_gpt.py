@@ -74,7 +74,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
     #
     #     input_ids = o['input_ids']
     #     input_ids = torch.tensor(input_ids, dtype=torch.int32,device = device).unsqueeze(0)
-    #     output =  pl_module.model.model.generate(input_ids,
+    #     output =  pl_module.backbone.model.generate(input_ids,
     #                max_length=max_target_length,
     #                bos_token_id = tokenizer.cls_token_id)
     #

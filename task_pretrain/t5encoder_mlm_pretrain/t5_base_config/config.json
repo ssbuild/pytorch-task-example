@@ -1,21 +1,21 @@
 {
   "architectures": [
-    "T5DecoderLMHeadModel"
+    "T5EncoderModel"
   ],
-  "d_ff": 5120,
+  "d_ff": 2048,
   "d_kv": 64,
-  "d_model": 2048,
+  "d_model": 768,
   "decoder_start_token_id": 101,
   "dropout_rate": 0.1,
   "initializer_factor": 1.0,
-  "is_decoder": true,
   "is_encoder_decoder": false,
+  "is_decoder": false,
   "layer_norm_epsilon": 1e-12,
   "model_type": "t5",
   "feed_forward_proj": "gated-gelu",
   "n_positions": 512,
-  "num_heads": 32,
-  "num_layers": 24,
+  "num_heads": 12,
+  "num_layers": 12,
   "output_past": true,
   "pad_token_id": 0,
   "relative_attention_num_buckets": 32,
