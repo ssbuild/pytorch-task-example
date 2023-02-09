@@ -23,7 +23,8 @@ train_info_args = {
     'do_train': True, 
     'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
     'learning_rate': 5e-5,
-    'max_epochs': 3,
+    'max_epochs': -1,
+    'max_steps': 100000,
     'train_batch_size': 10,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
@@ -38,17 +39,24 @@ train_info_args = {
     'do_lower_case': False,
     'do_whole_word_mask': True,
     'max_predictions_per_seq': 20,
-    'dupe_factor': 5,
+    'dupe_factor': 1,
     'masked_lm_prob': 0.15
 }
 
 
 class NN_DataHelper(DataHelper):
+    index = -1
+    def on_data_ready(self):
+        self.index = -1
+
     # 切分词
     def on_data_process(self, data: typing.Any, mode: typing.Any):
+        self.index += 1
+
         tokenizer: BertTokenizer
         max_seq_length = self.max_seq_length_dict[mode]
         tokenizer = self.tokenizer
+
 
         rng, do_whole_word_mask, max_predictions_per_seq, masked_lm_prob = self.external_kwargs['mlm_args']
 
@@ -66,6 +74,9 @@ class NN_DataHelper(DataHelper):
             node = make_mlm_wwm_sample(text, tokenizer, max_seq_length, rng, do_whole_word_mask,
                                        max_predictions_per_seq, masked_lm_prob)
             document_nodes.append(node)
+
+        if self.index < 3:
+            print(document_nodes[0])
         return document_nodes
 
     # 读取文件
@@ -84,7 +95,7 @@ class NN_DataHelper(DataHelper):
                     D.append([doc for doc in docs if doc])
                     line_no += 1
 
-                    if line_no > 1000:
+                    if line_no > 10000:
                         break
 
                     if line_no % 10000 == 0:
@@ -125,7 +136,7 @@ if __name__ == '__main__':
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,shuffle=True,mode='train',dupe_factor=mlm_data_args.dupe_factor)
+        dataHelper.make_dataset_with_args(data_args.train_file,shuffle=True,mode='train',dupe_factor=mlm_data_args.dupe_factor,num_process_worker=10)
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False,mode='eval')
     if data_args.do_test:

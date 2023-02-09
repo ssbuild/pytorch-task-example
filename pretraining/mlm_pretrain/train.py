@@ -3,22 +3,23 @@ import random
 
 import torch
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
-from deep_training.nlp.models.t5encoder import TransformerT5EncoderMaskedLM
+from deep_training.nlp.models.transformer import TransformerForMaskLM
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser
+
 from data_utils import NN_DataHelper,train_info_args
 
-class MyTransformer(TransformerT5EncoderMaskedLM, with_pl=True):
+class MyTransformer(TransformerForMaskLM, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
         self.loss_fct = CrossEntropyLoss(reduction='mean')
 
     def compute_loss_mlm(self, y_trues, y_preds):
         loss = self.loss_fct(y_preds.view(-1, y_preds.size(-1)), y_trues.view(-1))
-        return loss.mean()
+        return loss
 
     def compute_loss(self, *args, **batch) -> tuple:
         labels = None
@@ -61,7 +62,7 @@ if __name__ == '__main__':
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,shuffle=True,mode='train', dupe_factor=mlm_data_args.dupe_factor)
+        dataHelper.make_dataset_with_args(data_args.train_file,shuffle=True,mode='train', dupe_factor=mlm_data_args.dupe_factor,num_process_worker=10)
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False,mode='eval')
     if data_args.do_test:
