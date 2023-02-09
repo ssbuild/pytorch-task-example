@@ -1,7 +1,7 @@
 ## 安装
 
-- pip install -U deep_training >= 0.0.11
-- 当前文档版本pypi 0.0.11@post1
+- pip install -U deep_training >= 0.0.12
+- 当前文档版本pypi 0.0.12
 
 ## 更新详情
 
@@ -14,7 +14,8 @@
 - tast_extract_relation 关系抽取模型
 - tast_extract_event 事件抽取模型
 - task_generate 文本生成模型
-- task_pretrain 主流预训练模型
+- pretraining 主流预训练模型
+- pretraining_poetry 主流预训练模型应用项目
 - task_sentence_vector 句向量模型
 - task_custom_muti_gpu 更多自定义训练操作，例如多卡训练例子， 模型转换onnx 等一些列自定义操作
 
