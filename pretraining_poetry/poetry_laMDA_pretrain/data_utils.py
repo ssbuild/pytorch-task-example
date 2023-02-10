@@ -21,7 +21,7 @@ from transformers import BertTokenizer, HfArgumentParser
 train_info_args = {
     'devices': 1,
     'data_backend': 'record',
-    'model_type': 't5',
+    'model_type': 'LaMDAModel',
     # 预训练模型路径 , 从0训练，则置空
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
     'tokenizer_name': './laMDA_base_config',
