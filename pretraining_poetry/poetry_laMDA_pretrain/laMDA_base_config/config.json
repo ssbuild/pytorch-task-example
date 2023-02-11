@@ -12,7 +12,7 @@
   "n_embd": 768,
   "n_head": 12,
   "n_layer": 12,
-  "activation_function": "gelu",
+  "activation_function": "gelu_new",
   "tokenizer_class": "BertTokenizer",
   "vocab_size": 16448
 }
