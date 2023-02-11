@@ -8,13 +8,12 @@
   "embd_pdrop": 0.1,
   "attn_pdrop": 0.1,
   "initializer_range": 0.02,
-  "layer_norm_epsilon": 1e-12,
-  "n_ctx": 1024,
+  "layer_norm_epsilon": 1e-8,
+  "n_inner": 3072,
   "n_embd": 768,
   "n_head": 12,
   "n_layer": 12,
-  "activation_function": "geglu",
-  "n_positions": 512,
+  "activation_function": "gelu",
   "tokenizer_class": "BertTokenizer",
   "vocab_size": 16448
 }

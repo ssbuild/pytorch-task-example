@@ -166,12 +166,12 @@ class NN_DataHelper(DataHelper):
             pad_len = max_seq_length - seqlen
             input_ids_ = np.asarray(input_ids_, dtype=np.int32)
             attention_mask_ = np.asarray(attention_mask_, dtype=np.int32)
-            labels = copy.deepcopy(input_ids_[1:])
+            labels = copy.deepcopy(input_ids_)
             if pad_len:
                 pad_val = tokenizer.pad_token_id
                 input_ids_ = np.pad(input_ids_, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
                 attention_mask_ = np.pad(attention_mask_, (0, pad_len), 'constant', constant_values=(0, 0))
-            labels = np.pad(labels, (0, pad_len + 1), 'constant', constant_values=(-100, -100))
+                labels = np.pad(labels, (0, pad_len), 'constant', constant_values=(-100, -100))
             d = {
                 'input_ids': input_ids_,
                 'attention_mask': attention_mask_,

@@ -166,13 +166,10 @@ if __name__ == '__main__':
         input_sample = (
             ("input_ids", torch.ones(size=(1, 128), dtype=torch.int32)),
             ("attention_mask", torch.ones(size=(1, 128), dtype=torch.int32)),
-            ("decoder_input_ids", torch.ones(size=(1, 128), dtype=torch.int32)),
-            ("decoder_attention_mask", torch.ones(size=(1, 128), dtype=torch.int32)),
         )
-        input_names = ("input_ids","attention_mask", "decoder_input_ids","decoder_attention_mask")
+        input_names = ("input_ids","attention_mask")
         output_names = ("pred_ids",)
         dynamic_axes = None or {"input_ids": [0, 1], "attention_mask": [0, 1],
-                                "decoder_input_ids": [0, 1],"decoder_attention_mask": [0, 1],
                                 "pred_ids": [0, 1]}
         model.convert_to_onnx('./best.onnx',
                               input_sample=input_sample,
