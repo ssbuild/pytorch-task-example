@@ -14,7 +14,7 @@ from transformers import BertTokenizer, HfArgumentParser
 
 train_info_args = {
     'devices': 1,
-    'data_backend': 'memory_raw',
+    'data_backend': 'record',
     'model_type': 't5',
     # 'model_name_or_path': '/data/nlp/pre_models/torch/',
     'tokenizer_name': './t5_small_config',

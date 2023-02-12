@@ -13,7 +13,7 @@ from transformers import BertTokenizer, HfArgumentParser
 
 train_info_args = {
         'devices': 1,
-        'data_backend': 'memory_raw',
+        'data_backend': 'record',
         'model_type': 'gpt2',
         # 预训练模型路径 , 从0训练，则置空
         # 'model_name_or_path': '/data/nlp/pre_models/torch/',

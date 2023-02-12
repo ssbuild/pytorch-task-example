@@ -238,12 +238,10 @@ if __name__ == '__main__':
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
-                                                 process_index=trainer.global_rank, infinite=True,
-                                                 with_record_iterable_dataset=True, with_torchdataset=False)
+        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True,  infinite=True,
+                                                 with_record_iterable_dataset=True)
 
         if train_datasets is not None:
-            train_datasets = torch_Dataset(train_datasets)
             train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size // 2,
                                         collate_fn=dataHelper.train_collate_fn,
                                         shuffle=False if isinstance(train_datasets, IterableDataset) else True)

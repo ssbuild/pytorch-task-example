@@ -283,8 +283,7 @@ if __name__ == '__main__':
     model = MyTransformer(pooling=pooling, config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
-                                                 process_index=trainer.global_rank, infinite=True,
+        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True,  infinite=True,
                                                  with_record_iterable_dataset=False,
                                                  with_load_memory=True)
 

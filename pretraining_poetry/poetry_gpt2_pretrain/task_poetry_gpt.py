@@ -164,10 +164,8 @@ if __name__ == '__main__':
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, num_processes=trainer.world_size,
-                                                 process_index=trainer.global_rank, infinite=True,
-                                                 with_load_memory=True,
-                                                 with_record_iterable_dataset=False, )
+        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True, infinite=True,
+                                                 with_load_memory=True, )
 
         if train_datasets is not None:
             train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
@@ -177,8 +175,10 @@ if __name__ == '__main__':
         ckpt_path = './best.pt'
         if not os.path.exists(ckpt_path):
             ckpt_path = None
+
+
         if train_datasets is not None:
-            trainer.fit(model, train_dataloaders=train_datasets,ckpt_path=ckpt_path)
+            trainer.fit(model, train_dataloaders=train_datasets, ckpt_path=ckpt_path)
         else:
             eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
             test_datasets = dataHelper.load_sequential_sampler(dataHelper.test_files,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)

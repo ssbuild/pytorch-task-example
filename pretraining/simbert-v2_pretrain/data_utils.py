@@ -12,7 +12,7 @@ from transformers import BertTokenizer, HfArgumentParser
 
 train_info_args = {
     'devices': '1',
-    'data_backend': 'memory_raw',
+    'data_backend': 'record',
     'model_type': 'bert',
     'model_name_or_path': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
     'tokenizer_name': '/data/nlp/pre_models/torch/bert/bert-base-chinese',
