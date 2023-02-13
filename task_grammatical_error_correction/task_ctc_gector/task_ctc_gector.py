@@ -2,9 +2,10 @@
 # @Time    : 2023/2/10 17:18
 
 import logging
-
+import numpy as np
 import torch
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
+from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.gec_model import TransformerForGec, extract_gec, extract_gec_from_labels
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
@@ -51,6 +52,24 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         print(y_preds[:3])
         print(y_trues[:3])
+
+        label2id = {
+            'insert': 1,
+            'delete': 2,
+            'update': 3
+        }
+
+        f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)
+        print(f1)
+        print(str_report)
+
+        best_f1 = self.best.get('f1', -np.inf)
+        print('current', f1, 'best', best_f1)
+        if f1 >= best_f1:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
+
         logging.info('save {}\n'.format(self.weight_file))
         trainer.save_checkpoint(self.weight_file)
 

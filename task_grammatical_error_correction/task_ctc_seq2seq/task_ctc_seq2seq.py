@@ -31,9 +31,12 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         device = torch.device('cuda:{}'.format(device))
 
         input_ids = torch.tensor(input_ids, dtype=torch.int32,device = device).unsqueeze(0)
-        output =  pl_module.backbone.model.generate(input_ids,
-                   max_length=max_target_length,
-                   bos_token_id = tokenizer.cls_token_id)
+        output = pl_module.backbone.model.generate(input_ids,
+                   max_length = max_target_length,
+                   bos_token_id = tokenizer.cls_token_id,
+                   pad_token_id = tokenizer.pad_token_id,
+                   eos_token_id = tokenizer.sep_token_id,
+        )
 
         gen_ids, gen_tokens = [], []
         for logits in output[0]:
@@ -63,7 +66,8 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             for k in batch:
                 batch[k] = batch[k].to(device)
             for input_ids in batch['input_ids']:
-                 output = MySimpleModelCheckpoint.generate_text_huggingface(pl_module,input_ids,
+                 output = MySimpleModelCheckpoint.generate_text_huggingface(pl_module,
+                                                                            input_ids,
                                                                             tokenizer=tokenizer,
                                                                             max_target_length=config.max_target_length,
                                                                             device=trainer.global_rank)

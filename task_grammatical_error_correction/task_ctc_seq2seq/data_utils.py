@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 # @Time:  3:12
-# @Author:XIE392
 # @File：data_utils.py
 import json
+import typing
 
 import numpy as np
 import torch
-import typing
-
 from deep_training.data_helper import DataHelper, ModelArguments, TrainingArguments, DataArguments
 from transformers import BertTokenizer, HfArgumentParser
-
 
 train_info_args = {
     'devices': 1,
@@ -20,8 +17,12 @@ train_info_args = {
     'tokenizer_name': './t5_small_config',
     'config_name': './t5_small_config/config.json',
     'convert_onnx': False, # 转换onnx模型
-    'do_train': True, 
-    'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
+    'do_train': True,
+    'do_eval': True,
+    'train_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/train.json'],
+    'eval_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/dev.json'],
+    'test_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/test.json'],
+    'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/labels.json'],
     'learning_rate': 5e-5,
     'max_epochs': 3,
     'train_batch_size': 10,
@@ -74,7 +75,7 @@ class NN_DataHelper(DataHelper):
         d['decoder_attention_mask'] = o2['attention_mask']
         d['decoder_seqlen'] = o2['seqlen']
 
-        labels = np.ones_like(d['decoder_input_ids']) * -100
+        labels = np.ones_like(d['decoder_input_ids'],dtype=np.int64) * -100
         labels[:o2['seqlen']-1] = d['decoder_input_ids'][1:o2['seqlen']]
         return d
 
