@@ -70,8 +70,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
             trainer.save_checkpoint(self.weight_file)
 
-        logging.info('save {}\n'.format(self.weight_file))
-        trainer.save_checkpoint(self.weight_file)
 
         # best_f1 = self.best.get('f1', -np.inf)
         # print('current', f1, 'best', best_f1)
