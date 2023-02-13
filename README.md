@@ -32,6 +32,17 @@
 ## 层次分解位置编码，让BERT可以处理超长文本
     'hierarchical_position':  0.4 
 
+## 导出onnx模型
+```
+        参数配置
+            convert_onnx = True
+        #加载权重例子
+        model = MyTransformer.load_from_checkpoint('./best.pt', config=config, model_args=model_args,
+                                                       training_args=training_args)
+        #导出onnx模型
+        model.convert_to_onnx('./best.onnx')
+
+```
 ## 多卡训练策略 strategy
 
     # Available names: bagua, colossalai, ddp, ddp_find_unused_parameters_false, ddp_fork,
