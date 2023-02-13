@@ -1,0 +1,24 @@
+{
+  "architectures": [
+    "T5WithLMHeadModel"
+  ],
+  "d_ff": 2816,
+  "d_kv": 64,
+  "d_model": 1024,
+  "decoder_start_token_id": 101,
+  "dropout_rate": 0.1,
+  "initializer_factor": 1.0,
+  "is_encoder_decoder": true,
+  "layer_norm_epsilon": 1e-8,
+  "model_type": "t5",
+  "feed_forward_proj": "gated-gelu",
+  "n_positions": 512,
+  "num_heads": 16,
+  "num_layers": 24,
+  "num_decoder_layers": 24,
+  "output_past": true,
+  "pad_token_id": 0,
+  "relative_attention_num_buckets": 32,
+  "tokenizer_class": "BertTokenizer",
+  "vocab_size": 16448
+}

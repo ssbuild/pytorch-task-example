@@ -82,7 +82,7 @@ class NN_DataHelper(DataHelper):
             pad_val = tokenizer.pad_token_id
             decoder_input_ids = np.pad(decoder_input_ids, (0, pad_len), 'constant', constant_values=(pad_val, pad_val))
             decoder_attention_mask = np.pad(decoder_attention_mask, (0, pad_len), 'constant', constant_values=(0, 0))
-            labels = np.pad(labels, (0, pad_len+1), 'constant', constant_values=(-100, -100))
+        labels = np.pad(labels, (0, pad_len+1), 'constant', constant_values=(-100, -100))
 
         d = {
             'input_ids': input_ids,
