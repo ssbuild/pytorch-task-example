@@ -87,7 +87,7 @@ class NN_DataHelper(DataHelper):
                 lines = f.readlines()
                 for i, line in enumerate(lines):
                     jd = json.loads(line)
-                    D.append((jd['content'], jd['title']))
+                    D.append((jd['source'], jd['target']))
         return D
 
     def collate_fn(self, batch):

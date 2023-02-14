@@ -71,13 +71,6 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             trainer.save_checkpoint(self.weight_file)
 
 
-        # best_f1 = self.best.get('f1', -np.inf)
-        # print('current', f1, 'best', best_f1)
-        # if f1 >= best_f1:
-        #     self.best['f1'] = f1
-        #     logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
-        #     trainer.save_checkpoint(self.weight_file)
-
 
 if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))

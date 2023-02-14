@@ -3,8 +3,11 @@
 
 import logging
 
+import Levenshtein
+import numpy as np
 import torch
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
+from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.transformer import TransformerForSeq2SeqLM
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
@@ -45,7 +48,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             if token.startswith('##'):
                 token = token.replace('##', '')
             gen_tokens.append(token)
-        return ''.join(gen_tokens)
+        return ''.join(gen_tokens),gen_ids
 
     def on_save_model(
             self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
@@ -61,29 +64,70 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         config = pl_module.config
 
         y_preds, y_trues = [], []
+
+        op_map = {
+            'insert': 1,
+            'delete': 2,
+            'replace': 3
+        }
+
+        def get_ops(source,target):
+            edits = Levenshtein.opcodes(source, target)
+            ops = []
+            for item in edits:
+                if item[0] == 'equal':
+                    continue
+                op = op_map[item[0]]
+                s = item[0]
+                e = item[1]
+                ops.append((op, s, e))
+            return ops
+
         for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
-            batch_labels = batch.pop('labels')
+            batch_labels = batch.pop('labels',None)
             for k in batch:
                 batch[k] = batch[k].to(device)
-            for input_ids in batch['input_ids']:
-                 output = MySimpleModelCheckpoint.generate_text_huggingface(pl_module,
+            for input_ids,attention_mask,labels in zip(batch['input_ids'],batch['attention_mask'],batch_labels):
+                seqlen = np.sum(attention_mask,axis=-1)
+                output = MySimpleModelCheckpoint.generate_text_huggingface(pl_module,
                                                                             input_ids,
                                                                             tokenizer=tokenizer,
                                                                             max_target_length=config.max_target_length,
                                                                             device=trainer.global_rank)
-                 print(output)
+                source = input_ids[1:seqlen-1].cpu().numpy()
+                pred_ops = get_ops(source, output[1])
 
 
+                _ = np.where(labels==-100)[0]
+                if len(_):
+                    seqlen = _[0] + 1
+                else:
+                    seqlen = len(labels)
+                labels = labels[1:seqlen - 1]
+                true_ops = get_ops(source, labels)
 
-        logging.info('save {}\n'.format( self.weight_file))
-        trainer.save_checkpoint(self.weight_file)
+                y_preds.append(pred_ops)
+                y_trues.append(true_ops)
 
-        # best_f1 = self.best.get('f1', -np.inf)
-        # print('current', f1, 'best', best_f1)
-        # if f1 >= best_f1:
-        #     self.best['f1'] = f1
-        #     logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
-        #     trainer.save_checkpoint(self.weight_file)
+        print(y_preds[:3])
+        print(y_trues[:3])
+
+        label2id = {
+            'insert': 1,
+            'delete': 2,
+            'update': 3
+        }
+
+        f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)
+        print(f1)
+        print(str_report)
+
+        best_f1 = self.best.get('f1', -np.inf)
+        print('current', f1, 'best', best_f1)
+        if f1 >= best_f1:
+            self.best['f1'] = f1
+            logging.info('save best {}, {}\n'.format(self.best['f1'], self.weight_file))
+            trainer.save_checkpoint(self.weight_file)
 
 
 if __name__ == '__main__':
