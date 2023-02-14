@@ -83,18 +83,14 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 e = item[2]
                 ds = item[3]
                 de = item[4]
-                #insert
-                if action == 1:
+                #insert,replace
+                if action == 1 or action == 3:
                     for idx in range(de-ds + 1):
                         ops.append((action, s+idx, target[ds + idx]))
                 #delete
                 elif action == 2:
                     for idx in range(s, e):
-                        ops.append((action, idx, 0))
-                #replace
-                elif action == 3:
-                    for idx in range(de - ds + 1):
-                        ops.append((action, s + idx, target[ds + idx]))
+                        ops.append((action, s+idx, 0))
                 else:
                     raise ValueError('invalid action ',action)
 
