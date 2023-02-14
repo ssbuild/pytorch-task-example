@@ -8,14 +8,14 @@
 - [deep_training](https://github.com/ssbuild/deep_training)
 
 ## 目录
-
+- pretraining 主流预训练模型
+- pretraining_poetry 主流预训练模型应用项目
 - task_classify 分类模型
 - task_extract_ner 序列抽取模型
 - tast_extract_relation 关系抽取模型
 - tast_extract_event 事件抽取模型
 - task_generate 文本生成模型
-- pretraining 主流预训练模型
-- pretraining_poetry 主流预训练模型应用项目
+- task_grammatical_error_correction 文本纠错模型
 - task_sentence_vector 句向量模型
 - task_custom_muti_gpu 更多自定义训练操作，例如多卡训练例子， 模型转换onnx 等一些列自定义操作
 
