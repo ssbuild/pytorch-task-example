@@ -1,7 +1,7 @@
 ## 安装
 
-- pip install -U deep_training >= 0.0.12
-- 当前文档版本pypi 0.0.12
+- pip install -U deep_training >= 0.0.13
+- 当前文档版本pypi 0.0.13
 
 ## 更新详情
 

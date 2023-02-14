@@ -66,7 +66,7 @@ if __name__ == '__main__':
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False,mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,shuffle=False,mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file,mode='test')
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 

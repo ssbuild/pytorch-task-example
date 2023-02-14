@@ -315,9 +315,9 @@ if __name__ == '__main__':
 
         dataHelper.make_dataset_with_args(data_args.train_file, shuffle=True,mode='train')
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False, mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file, mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,shuffle=False,mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file,mode='test')
 
     model = MyTransformer(tsdae_args=tsdae_args, decoder_tokenizer=decoder_tokenizer, decoder_config=decoder_config,
                           config=config, model_args=model_args, training_args=training_args)

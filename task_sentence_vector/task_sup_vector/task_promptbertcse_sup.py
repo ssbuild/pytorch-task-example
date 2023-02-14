@@ -326,9 +326,9 @@ if __name__ == '__main__':
     if data_args.do_train:
         dataHelper.make_dataset_with_args(data_args.train_file, shuffle=True,mode='train')
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False, mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file, mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,shuffle=False,mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file,mode='test')
 
     # 修改config的dropout系数
     config.attention_probs_dropout_prob = 0.3
