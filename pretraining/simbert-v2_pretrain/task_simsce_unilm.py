@@ -62,7 +62,7 @@ if __name__ == '__main__':
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
-        accelerator="gpu",
+        accelerator="gpu",replace_sampler_ddp=False,
         devices=data_args.devices,
         enable_progress_bar=True,
         default_root_dir=data_args.output_dir,
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True,  infinite=True,
+        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True,infinite=True,
                                                  with_record_iterable_dataset=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
 
         if train_datasets is not None:
