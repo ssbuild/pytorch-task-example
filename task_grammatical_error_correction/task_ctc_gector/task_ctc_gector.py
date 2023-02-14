@@ -45,18 +45,20 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 batch[k] = batch[k].to(device)
             o = pl_module.validation_step(batch, i)
             logits_action,logits_probs,seqlens,labels_action,labels_probs = o['outputs']
+            #抽取 三元组（action,position,vocab）
             output_list = extract_gec([logits_action,logits_probs,seqlens])
             true_list = extract_gec_from_labels([labels_action,labels_probs,seqlens])
             y_preds.extend(output_list)
             y_trues.extend(true_list)
 
+        #  三元组（action,position,vocab）
         print(y_preds[:3])
         print(y_trues[:3])
 
         label2id = {
             'insert': 1,
             'delete': 2,
-            'update': 3
+            'replace': 3
         }
 
         f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)

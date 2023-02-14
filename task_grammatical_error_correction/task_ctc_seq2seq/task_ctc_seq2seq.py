@@ -71,16 +71,33 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             'replace': 3
         }
 
+        #  三元组（action,position,vocab）
         def get_ops(source,target):
             edits = Levenshtein.opcodes(source, target)
             ops = []
             for item in edits:
                 if item[0] == 'equal':
                     continue
-                op = op_map[item[0]]
-                s = item[0]
-                e = item[1]
-                ops.append((op, s, e))
+                action = op_map[item[0]]
+                s = item[1]
+                e = item[2]
+                ds = item[3]
+                de = item[4]
+                #insert
+                if action == 1:
+                    for idx in range(de-ds + 1):
+                        ops.append((action, s+idx, target[ds + idx]))
+                #delete
+                elif action == 2:
+                    for idx in range(s, e):
+                        ops.append((action, idx, 0))
+                #replace
+                elif action == 3:
+                    for idx in range(de - ds + 1):
+                        ops.append((action, s + idx, target[ds + idx]))
+                else:
+                    raise ValueError('invalid action ',action)
+
             return ops
 
         for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
@@ -95,6 +112,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                                                                             max_target_length=config.max_target_length,
                                                                             device=trainer.global_rank)
                 source = input_ids[1:seqlen-1].cpu().numpy()
+                #  三元组（action,position,vocab）
                 pred_ops = get_ops(source, output[1])
 
 
@@ -104,6 +122,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 else:
                     seqlen = len(labels)
                 labels = labels[1:seqlen - 1]
+                #  三元组（action,position,vocab）
                 true_ops = get_ops(source, labels)
 
                 y_preds.append(pred_ops)
@@ -115,7 +134,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         label2id = {
             'insert': 1,
             'delete': 2,
-            'update': 3
+            'replace': 3
         }
 
         f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)
