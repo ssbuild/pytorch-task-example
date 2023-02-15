@@ -41,7 +41,8 @@
     第三步 #导出onnx模型
     model.convert_to_onnx('./best.onnx')
 
-## 多卡训练策略 strategy
+## 多卡训练策略 strategy , 通常只需要一步
+    修改参数配置 devices = N 
 
     # Available names: bagua, colossalai, ddp, ddp_find_unused_parameters_false, ddp_fork,
     # ddp_fork_find_unused_parameters_false, ddp_fully_sharded,
