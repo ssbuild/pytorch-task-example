@@ -1,0 +1,18 @@
+{
+  "model_type": "laMDA",
+  "architectures": [
+    "LaMDALMHeadModel"
+  ],
+  "return_dict": false,
+  "resid_pdrop": 0.1,
+  "embd_pdrop": 0.1,
+  "attn_pdrop": 0.1,
+  "initializer_range": 0.02,
+  "layer_norm_epsilon": 1e-8,
+  "n_embd": 1280,
+  "n_head": 20,
+  "n_layer": 36,
+  "activation_function": "gelu_new",
+  "tokenizer_class": "BertTokenizer",
+  "vocab_size": 16448
+}

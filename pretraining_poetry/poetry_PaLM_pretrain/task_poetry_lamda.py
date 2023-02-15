@@ -4,7 +4,7 @@ import os
 import numpy as np
 import torch
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
-from deep_training.nlp.models.laMDA import TransformerLamdaLMHeadModel,LaMDAConfig
+from deep_training.nlp.models.PaLM import TransformerPalmLMHeadModel,PaLMConfig
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
@@ -12,7 +12,7 @@ from transformers import HfArgumentParser, BertTokenizer
 from data_utils import NN_DataHelper, data_conf,train_info_args
 
 
-class MyTransformer(TransformerLamdaLMHeadModel, with_pl=True):
+class MyTransformer(TransformerPalmLMHeadModel, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
 
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     )
 
     dataHelper = NN_DataHelper(model_args, training_args, data_args)
-    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(config_class_name=LaMDAConfig)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(config_class_name=PaLMConfig)
 
     config.decoder_start_token_id = tokenizer.cls_token_id
     # 额外参数

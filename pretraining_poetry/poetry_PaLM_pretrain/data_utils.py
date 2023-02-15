@@ -12,7 +12,7 @@ import typing
 import numpy as np
 import torch
 from deep_training.data_helper import DataHelper, ModelArguments, TrainingArguments, DataArguments
-from deep_training.nlp.models.laMDA import LaMDAConfig
+from deep_training.nlp.models.PaLM import PaLMConfig
 from deep_training.utils.func import is_chinese_char
 from fastdatasets.record import load_dataset as Loader, RECORD, WriterObject, gfile
 from tqdm import tqdm
@@ -268,7 +268,7 @@ if __name__ == '__main__':
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
     dataHelper = NN_DataHelper(model_args, training_args, data_args)
-    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(config_class_name=LaMDAConfig)
+    tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config(config_class_name=PaLMConfig)
 
     # 缓存数据集
     # 检测是否存在 output/dataset_0-train.record ，不存在则制作数据集
