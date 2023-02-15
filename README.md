@@ -7,9 +7,12 @@
 
 - [deep_training](https://github.com/ssbuild/deep_training)
 
+## 诗歌模型训练
+
+- [poetry_training](https://github.com/ssbuild/poetry_training)
+
 ## 目录
 - pretraining 主流预训练模型
-- pretraining_poetry 主流预训练模型应用项目
 - task_classify 分类模型
 - task_extract_ner 序列抽取模型
 - tast_extract_relation 关系抽取模型
