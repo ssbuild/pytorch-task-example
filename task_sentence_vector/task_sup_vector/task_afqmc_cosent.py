@@ -32,9 +32,18 @@ train_info_args = {
     # 'train_file': ['/data/nlp/nlp_train_data/clue/afqmc_public/train.json'],
     # 'eval_file': ['/data/nlp/nlp_train_data/clue/afqmc_public/dev.json'],
     # 'test_file': ['/data/nlp/nlp_train_data/clue/afqmc_public/test.json'],
-    'train_file': [ '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data'],
-    'eval_file': [ '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data'],
-    'test_file': [ '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data'],
+    'train_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data'],
+    'eval_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data'],
+    'test_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data'],
+    # 'train_file': ['/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data'],
+    # 'eval_file': ['/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data'],
+    # 'test_file': ['/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data'],
+    # 'train_file': ['/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data'],
+    # 'eval_file': ['/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data'],
+    # 'test_file': ['/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data'],
+    # 'train_file': [ '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data'],
+    # 'eval_file': [ '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data'],
+    # 'test_file': [ '/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data'],
     'optimizer': 'adamw',
     'learning_rate': 5e-5,
     'max_epochs': 3,
@@ -220,9 +229,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
-                                   collate_fn=dataHelper.collate_fn)
+        eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
         a_vecs, b_vecs, labels = [], [], []
         for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
@@ -258,6 +265,7 @@ if __name__ == '__main__':
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
     checkpoint_callback = MySimpleModelCheckpoint(monitor="f1",
+                                                  every_n_epochs=1,
                                                   every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
@@ -288,14 +296,12 @@ if __name__ == '__main__':
     model = MyTransformer(pooling=pooling, config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True,infinite=True,
-                                                 with_record_iterable_dataset=False,
-                                                 with_load_memory=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
-
-        if train_datasets is not None:
-            train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                        collate_fn=dataHelper.collate_fn,
-                                        shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+        train_datasets = dataHelper.load_random_sampler(dataHelper.train_files,
+                                                        with_load_memory=True,
+                                                        collate_fn=dataHelper.collate_fn,
+                                                        batch_size=training_args.train_batch_size,
+                                                        shuffle=True, infinite=True, num_processes=trainer.world_size,
+                                                        process_index=trainer.global_rank)
 
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)

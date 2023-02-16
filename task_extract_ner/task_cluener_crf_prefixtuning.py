@@ -201,9 +201,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
-                                   collate_fn=dataHelper.collate_fn)
+        eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
         config = pl_module.config
 
@@ -276,11 +274,11 @@ if __name__ == '__main__':
     model = MyTransformer(prompt_args=prompt_args, config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True,infinite=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
-        if train_datasets is not None:
-            train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                        collate_fn=dataHelper.collate_fn,
-                                        shuffle=False if isinstance(train_datasets, IterableDataset) else True)
+        train_datasets = dataHelper.load_random_sampler(dataHelper.train_files,
+                                                        with_load_memory=True,
+                                                        collate_fn=dataHelper.collate_fn,
+                                                        batch_size=training_args.train_batch_size,
+                                                        shuffle=True,infinite=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)
         else:

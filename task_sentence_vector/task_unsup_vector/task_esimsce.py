@@ -38,12 +38,12 @@ train_info_args = {
     # 'train_file': ['/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.train.data'],
     # 'eval_file': ['/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.valid.data'],
     # 'test_file': ['/data/nlp/nlp_train_data/senteval_cn/LCQMC/LCQMC.test.data'],
-    # 'train_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data'],
-    # 'eval_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data'],
-    # 'test_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data'],
-    'train_file': [ '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data'],
-    'eval_file': [ '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data'],
-    'test_file': [ '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data'],
+    'train_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.train.data'],
+    'eval_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.valid.data'],
+    'test_file': ['/data/nlp/nlp_train_data/senteval_cn/STS-B/STS-B.test.data'],
+    # 'train_file': [ '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.train.data'],
+    # 'eval_file': [ '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.valid.data'],
+    # 'test_file': [ '/data/nlp/nlp_train_data/senteval_cn/BQ/BQ.test.data'],
     # 'train_file': ['/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.train.data'],
     # 'eval_file': ['/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.valid.data'],
     # 'test_file': ['/data/nlp/nlp_train_data/senteval_cn/ATEC/ATEC.test.data'],
@@ -74,10 +74,12 @@ data_cut_config = {
 
 class DataCut(object):
     # qb_size 为缓存batch_size
-    def __init__(self, tokenizer, qb_size=10, dup_rate=0.15):
+    def __init__(self, qb_size=10, dup_rate=0.15):
         self.q = []
         self.qb_size = qb_size
         self.dup_rate = dup_rate
+
+    def set_tokenizer(self,tokenizer):
         self.tokenizer = tokenizer
 
     def word_repetition_normal(self, batch_text):
@@ -146,7 +148,8 @@ class NN_DataHelper(DataHelper):
         do_lower_case = tokenizer.do_lower_case
         label2id = self.label2id
 
-        data_cut: DataCut = self.data_cut
+
+        data_cut: DataCut = self.external_kwargs['data_cut']
         sentence1, sentence2, label_str = data
         if mode == 'train':
             ds = []
@@ -311,9 +314,7 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_dataset(dataHelper.eval_files)
-        eval_datasets = DataLoader(eval_datasets, batch_size=training_args.eval_batch_size,
-                                   collate_fn=dataHelper.collate_fn)
+        eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
 
         a_vecs, b_vecs, labels = [], [], []
         for i, batch in tqdm(enumerate(eval_datasets), total=len(eval_datasets), desc='evalute'):
@@ -368,7 +369,7 @@ if __name__ == '__main__':
     data_cut = DataCut(**data_cut_config)
     dataHelper = NN_DataHelper(model_args, training_args, data_args,data_cut = data_cut)
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config()
-    
+    data_cut.set_tokenizer(tokenizer)
 
     # 缓存数据集
     if data_args.do_train:
@@ -384,14 +385,14 @@ if __name__ == '__main__':
     model = MyTransformer(pooling=pooling, config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_dataset(dataHelper.train_files, shuffle=True,infinite=True,
-                                                 with_record_iterable_dataset=False,
-                                                 with_load_memory=True, limit_count=20000,num_processes=trainer.world_size,process_index=trainer.global_rank)
+        train_datasets = dataHelper.load_random_sampler(dataHelper.train_files,
+                                                        with_load_memory=True,
+                                                        collate_fn=dataHelper.train_collate_fn,
+                                                        batch_size=training_args.train_batch_size,
+                                                        shuffle=True, infinite=True, num_processes=trainer.world_size,
+                                                        process_index=trainer.global_rank,
+                                                        limit_count=20000)
 
-        if train_datasets is not None:
-            train_datasets = DataLoader(train_datasets, batch_size=training_args.train_batch_size,
-                                        collate_fn=dataHelper.train_collate_fn,
-                                        shuffle=False if isinstance(train_datasets, IterableDataset) else True)
 
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)
