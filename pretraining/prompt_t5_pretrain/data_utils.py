@@ -148,7 +148,7 @@ if __name__ == '__main__':
     # 缓存数据集
     # 检测是否存在 output/dataset_0-train.record ，不存在则制作数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file, shuffle=True,mode='train')
+        dataHelper.make_dataset_with_args(data_args.train_file,mixed_data=False, shuffle=True,mode='train')
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file, shuffle=False,mode='eval')
     if data_args.do_test:

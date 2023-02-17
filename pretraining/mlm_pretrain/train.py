@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,shuffle=True,mode='train', dupe_factor=mlm_data_args.dupe_factor,num_process_worker=10)
+        dataHelper.make_dataset_with_args(data_args.train_file,mixed_data=False,shuffle=True,mode='train', dupe_factor=mlm_data_args.dupe_factor,num_process_worker=10)
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False,mode='eval')
     if data_args.do_test:
