@@ -154,26 +154,3 @@ if __name__ == '__main__':
     if data_args.do_test:
         dataHelper.make_dataset_with_args(data_args.test_file, shuffle=False,mode='test')
 
-
-    def shuffle_records(record_filenames, outfile, compression_type='GZIP'):
-        print('shuffle_records record...')
-        options = RECORD.TFRecordOptions(compression_type=compression_type)
-        dataset_reader = Loader.RandomDataset(record_filenames, options=options, with_share_memory=True)
-        data_size = len(dataset_reader)
-        all_example = []
-        for i in tqdm(range(data_size), desc='load records'):
-            serialized = dataset_reader[i]
-            all_example.append(serialized)
-        dataset_reader.close()
-
-        shuffle_idx = list(range(data_size))
-        random.shuffle(shuffle_idx)
-        writer = WriterObject(outfile, options=options)
-        for i in tqdm(shuffle_idx, desc='shuffle record'):
-            example = all_example[i]
-            writer.write(example)
-        writer.close()
-
-
-    # 再次打乱数据
-    shuffle_records(dataHelper.train_files, dataHelper.train_files[0])
