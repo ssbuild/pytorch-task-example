@@ -10,15 +10,19 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser
 
-from data_utils import NN_DataHelper,train_info_args
+from data_utils import NN_DataHelper, train_info_args
+
+masked_token_id = None
+
 
 class MyTransformer(TransformerForMaskLM, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
-        self.loss_fct = CrossEntropyLoss(reduction='mean')
+        self.loss_fct = CrossEntropyLoss(reduction='none')
 
-    def compute_loss_mlm(self, y_trues, y_preds):
+    def compute_loss_mlm(self, y_trues, y_preds, mask=None):
         loss = self.loss_fct(y_preds.view(-1, y_preds.size(-1)), y_trues.view(-1))
+        loss = loss[mask.view(-1)].mean()
         return loss
 
     def compute_loss(self, *args, **batch) -> tuple:
@@ -28,7 +32,8 @@ class MyTransformer(TransformerForMaskLM, with_pl=True):
         outputs = self.model(*args, **batch)
         logits = outputs[0]
         if labels is not None:
-            loss = self.compute_loss_mlm(labels, logits)
+            mask = torch.tensor(batch['input_ids'] == masked_token_id,dtype=torch.bool)
+            loss = self.compute_loss_mlm(labels, logits, mask)
             outputs = (loss, logits, labels)
         else:
             outputs = (logits,)
@@ -46,7 +51,7 @@ if __name__ == '__main__':
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
-        accelerator="gpu",replace_sampler_ddp=False,
+        accelerator="gpu", replace_sampler_ddp=False,
         devices=data_args.devices,
         enable_progress_bar=True,
         default_root_dir=data_args.output_dir,
@@ -57,16 +62,18 @@ if __name__ == '__main__':
     )
 
     rng = random.Random(training_args.seed)
-    dataHelper = NN_DataHelper(model_args, training_args, data_args,mlm_args = (rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq,mlm_data_args.masked_lm_prob))
+    dataHelper = NN_DataHelper(model_args, training_args, data_args, mlm_args=(
+    rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq, mlm_data_args.masked_lm_prob))
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config()
-
+    masked_token_id = tokenizer.mask_token_id
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,mixed_data=False,shuffle=True,mode='train', dupe_factor=mlm_data_args.dupe_factor,num_process_worker=10)
+        dataHelper.make_dataset_with_args(data_args.train_file, mixed_data=False, shuffle=True, mode='train',
+                                          dupe_factor=mlm_data_args.dupe_factor, num_process_worker=10)
     if data_args.do_eval:
-        dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False,mode='eval')
+        dataHelper.make_dataset_with_args(data_args.eval_file, shuffle=False, mode='eval')
     if data_args.do_test:
-        dataHelper.make_dataset_with_args(data_args.test_file,mode='test')
+        dataHelper.make_dataset_with_args(data_args.test_file, mode='test')
 
     model = MyTransformer(config=config, model_args=model_args, training_args=training_args)
 
@@ -81,10 +88,14 @@ if __name__ == '__main__':
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)
         else:
-            eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
-            test_datasets = dataHelper.load_sequential_sampler(dataHelper.test_files,batch_size=training_args.test_batch_size,collate_fn=dataHelper.collate_fn)
+            eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,
+                                                               batch_size=training_args.eval_batch_size,
+                                                               collate_fn=dataHelper.collate_fn)
+            test_datasets = dataHelper.load_sequential_sampler(dataHelper.test_files,
+                                                               batch_size=training_args.test_batch_size,
+                                                               collate_fn=dataHelper.collate_fn)
             if eval_datasets is not None:
                 trainer.validate(model, dataloaders=eval_datasets, ckpt_path='./best.pt')
-    
+
             if test_datasets is not None:
                 trainer.test(model, dataloaders=test_datasets, ckpt_path='best.pt')
