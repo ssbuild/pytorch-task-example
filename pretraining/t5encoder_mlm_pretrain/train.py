@@ -20,6 +20,12 @@ class MyTransformer(TransformerT5EncoderMaskedLM, with_pl=True):
         loss = self.loss_fct(y_preds.view(-1, y_preds.size(-1)), y_trues.view(-1))
         return loss
 
+    def compute_acc(self, y_trues, y_preds, attention_mask):
+        attention_mask = attention_mask.view(-1)
+        z = torch.eq(torch.argmax(y_preds, dim=-1).view(-1), y_trues.view(-1))
+        acc = torch.sum(z * attention_mask) / torch.sum(attention_mask)
+        return acc
+
     def compute_loss(self, *args, **batch) -> tuple:
         labels = None
         if 'labels' in batch:
@@ -27,7 +33,13 @@ class MyTransformer(TransformerT5EncoderMaskedLM, with_pl=True):
         outputs = self.model(*args, **batch)
         logits = outputs[0]
         if labels is not None:
+            # mask = torch.tensor(batch['input_ids'] == masked_token_id,dtype=torch.bool)
             loss = self.compute_loss_mlm(labels, logits)
+            acc = self.compute_acc(labels, logits, batch['attention_mask'])
+            loss = {
+                'loss': loss,
+                'acc': acc
+            }
             outputs = (loss, logits, labels)
         else:
             outputs = (logits,)
