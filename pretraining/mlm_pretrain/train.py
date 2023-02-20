@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import random
 
 import torch
@@ -55,7 +56,10 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments, MlmDataArguments))
     model_args, training_args, data_args, mlm_data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = ModelCheckpoint(monitor="loss", save_top_k=5,
+    checkpoint_callback = ModelCheckpoint(save_last=True,
+                                          verbose=True,
+                                          monitor="loss",
+                                          save_top_k=5,
                                           every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
@@ -95,8 +99,13 @@ if __name__ == '__main__':
                                                         batch_size=training_args.train_batch_size,
                                                         shuffle=True, infinite=True, num_processes=trainer.world_size,
                                                         process_index=trainer.global_rank)
+        # 恢复断点训练
+        resume_ckpt_path = r'./epoch=0-step=4200.ckpt'
+        if not os.path.exists(resume_ckpt_path):
+            resume_ckpt_path = None
+
         if train_datasets is not None:
-            trainer.fit(model, train_dataloaders=train_datasets)
+            trainer.fit(model, train_dataloaders=train_datasets, ckpt_path=resume_ckpt_path)
         else:
             eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,
                                                                batch_size=training_args.eval_batch_size,
