@@ -2,6 +2,7 @@
 # @Time:  3:09
 # @Author:XIE392
 # @File：data_utils.py
+import copy
 import json
 import random
 
@@ -24,7 +25,7 @@ train_info_args = {
     'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
     'learning_rate': 5e-5,
     'max_epochs': -1,
-    'max_steps': 100000,
+    'max_steps': 300000,
     'train_batch_size': 10,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
@@ -39,10 +40,14 @@ train_info_args = {
     'do_lower_case': False,
     'do_whole_word_mask': True,
     'max_predictions_per_seq': 20,
-    'dupe_factor': 1,
+    'dupe_factor': 5,
     'masked_lm_prob': 0.15
 }
 
+
+data_conf = {
+    'count_per_group': 100,
+}
 
 class NN_DataHelper(DataHelper):
     index = -1
@@ -60,12 +65,17 @@ class NN_DataHelper(DataHelper):
 
         rng, do_whole_word_mask, max_predictions_per_seq, masked_lm_prob = self.external_kwargs['mlm_args']
 
-        documents = data
-        document_text_string = ''.join(documents)
+        group_documents = data
+
+        document_text_string = ''
+        for documents in group_documents:
+            document_text_string += ''.join(documents)
+
         document_texts = []
         pos = 0
+        slide_window = int(max_seq_length * 1.0)
         while pos < len(document_text_string):
-            text = document_text_string[pos:pos + max_seq_length - 2]
+            text = document_text_string[pos:pos + slide_window - 2]
             pos += len(text)
             document_texts.append(text)
         # 返回多个文档
@@ -81,7 +91,9 @@ class NN_DataHelper(DataHelper):
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
+        COUNT_PER_GROUP = data_conf['count_per_group']
         D = []
+        sub = []
         line_no = 0
         for input_file in files:
             with open(input_file, 'r', encoding='utf-8') as f:
@@ -90,17 +102,23 @@ class NN_DataHelper(DataHelper):
                     jd = json.loads(line)
                     if not jd:
                         continue
-                    text = jd['content']
+                    text = jd['text']
                     docs = text.split('\n\n')
-                    D.append([doc for doc in docs if doc])
+
+                    d = [doc for doc in docs if doc]
+                    sub.append(d)
+                    if len(sub) >= COUNT_PER_GROUP:
+                        D.append(copy.deepcopy(sub))
+                        sub.clear()
+
                     line_no += 1
-
-                    if line_no > 10000:
-                        break
-
                     if line_no % 10000 == 0:
                         print('read_line', line_no)
-                        print(D[-1])
+                        print(d)
+        if len(sub):
+            D.append(copy.deepcopy(sub))
+            sub.clear()
+
         return D
 
     def collate_fn(self, batch):
@@ -136,7 +154,8 @@ if __name__ == '__main__':
 
     # 缓存数据集
     if data_args.do_train:
-        dataHelper.make_dataset_with_args(data_args.train_file,mixed_data=False,shuffle=True,mode='train',dupe_factor=mlm_data_args.dupe_factor,num_process_worker=10)
+        dataHelper.make_dataset_with_args(data_args.train_file,mixed_data=False,shuffle=True,mode='train',dupe_factor=mlm_data_args.dupe_factor,
+                                          num_process_worker=20)
     if data_args.do_eval:
         dataHelper.make_dataset_with_args(data_args.eval_file,shuffle=False,mode='eval')
     if data_args.do_test:
