@@ -11,6 +11,7 @@ import typing
 from deep_training.data_helper import DataHelper, ModelArguments, TrainingArguments, MlmDataArguments, DataArguments
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
 from transformers import BertTokenizer, HfArgumentParser
+from fastdatasets import gfile
 
 
 train_info_args = {
