@@ -13,22 +13,23 @@ from transformers import HfArgumentParser
 
 from data_utils import NN_DataHelper, train_info_args
 
-masked_token_id = None
+mask_token_id = None
 
 
 class MyTransformer(TransformerForMaskLM, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
-        self.loss_fct = CrossEntropyLoss(reduction='mean')
+        self.loss_fct = CrossEntropyLoss(reduction='none')
 
-    def compute_loss_mlm(self, y_trues, y_preds):
+    def compute_loss_mlm(self, y_trues, y_preds, mask):
+        mask = mask.view(-1).bool()
         loss = self.loss_fct(y_preds.view(-1, y_preds.size(-1)), y_trues.view(-1))
+        loss = loss[mask].sum() / torch.sum(mask)
         return loss
 
-    def compute_acc(self, y_trues, y_preds, attention_mask):
-        attention_mask = attention_mask.view(-1)
-        z = torch.eq(torch.argmax(y_preds, dim=-1).view(-1), y_trues.view(-1))
-        acc = torch.sum(z * attention_mask) / torch.sum(attention_mask)
+    def compute_acc(self, y_trues, y_preds, mask):
+        z = torch.eq(torch.argmax(y_preds, dim=-1), y_trues)
+        acc = torch.sum(z * mask) / torch.count_nonzero(mask)
         return acc
 
     def compute_loss(self, *args, **batch) -> tuple:
@@ -38,12 +39,14 @@ class MyTransformer(TransformerForMaskLM, with_pl=True):
         outputs = self.model(*args, **batch)
         logits = outputs[0]
         if labels is not None:
-            # mask = torch.tensor(batch['input_ids'] == masked_token_id,dtype=torch.bool)
-            loss = self.compute_loss_mlm(labels, logits)
+            mask = torch.tensor(batch['input_ids'].clone() == mask_token_id, dtype=torch.float32)
+            loss = self.compute_loss_mlm(labels, logits, mask)
             acc = self.compute_acc(labels, logits, batch['attention_mask'])
+            mlm_acc = self.compute_acc(labels, logits, mask)
             loss = {
                 'loss': loss,
-                'acc': acc
+                'acc': acc,
+                'mlm_acc': mlm_acc,
             }
             outputs = (loss, logits, labels)
         else:
@@ -79,7 +82,7 @@ if __name__ == '__main__':
     dataHelper = NN_DataHelper(model_args, training_args, data_args, mlm_args=(
     rng, mlm_data_args.do_whole_word_mask, mlm_data_args.max_predictions_per_seq, mlm_data_args.masked_lm_prob))
     tokenizer, config, label2id, id2label = dataHelper.load_tokenizer_and_config()
-    masked_token_id = tokenizer.mask_token_id
+    mask_token_id = tokenizer.mask_token_id
     # 缓存数据集
     if data_args.do_train:
         dataHelper.make_dataset_with_args(data_args.train_file, mixed_data=False, shuffle=True, mode='train',
