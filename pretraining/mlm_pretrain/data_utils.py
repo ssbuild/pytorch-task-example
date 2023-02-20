@@ -47,7 +47,7 @@ train_info_args = {
 
 
 data_conf = {
-    'count_per_group': 100,
+    'count_per_group': 1,
 }
 
 class NN_DataHelper(DataHelper):

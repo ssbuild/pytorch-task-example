@@ -24,12 +24,12 @@ class MyTransformer(TransformerForMaskLM, with_pl=True):
     def compute_loss_mlm(self, y_trues, y_preds, mask):
         mask = mask.view(-1).bool()
         loss = self.loss_fct(y_preds.view(-1, y_preds.size(-1)), y_trues.view(-1))
-        loss = loss[mask].sum() / torch.sum(mask)
+        loss = torch.masked_select(loss,mask).sum() / (torch.sum(mask) + 1e-8)
         return loss
 
     def compute_acc(self, y_trues, y_preds, mask):
         z = torch.eq(torch.argmax(y_preds, dim=-1), y_trues)
-        acc = torch.sum(z * mask) / torch.count_nonzero(mask)
+        acc = torch.sum(z * mask) / (torch.sum(mask) + 1e-8)
         return acc
 
     def compute_loss(self, *args, **batch) -> tuple:
