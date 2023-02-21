@@ -6,12 +6,13 @@ import torch
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
 from deep_training.nlp.models.transformer import TransformerForMaskLM
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser
 
 from data_utils import NN_DataHelper, train_info_args
+from torch.nn.functional import one_hot
 
 mask_token_id = None
 
@@ -22,24 +23,26 @@ class MyTransformer(TransformerForMaskLM, with_pl=True):
         self.loss_fct = CrossEntropyLoss(reduction='none')
 
     def compute_loss_mlm(self, y_trues, y_preds, mask):
-        mask = mask.view(-1).bool()
-        loss = self.loss_fct(y_preds.view(-1, y_preds.size(-1)), y_trues.view(-1))
-        loss = torch.masked_select(loss,mask).sum() / (torch.sum(mask) + 1e-8)
-        return loss
+        y_preds = torch.transpose(y_preds, 1, 2)
+        masked_lm_loss = self.loss_fct(y_preds, y_trues)
+        masked_lm_loss = torch.sum(mask * masked_lm_loss) / (torch.sum(mask) + 1e-8)
+        return masked_lm_loss
 
     def compute_acc(self, y_trues, y_preds, mask):
-        z = torch.eq(torch.argmax(y_preds, dim=-1), y_trues)
-        acc = torch.sum(z * mask) / (torch.sum(mask) + 1e-8)
+        acc = torch.eq(torch.argmax(y_preds, dim=-1), y_trues)
+        acc = torch.sum(mask * acc) / (torch.sum(mask) + 1e-8)
         return acc
 
     def compute_loss(self, *args, **batch) -> tuple:
         labels = None
+        mask = None
         if 'labels' in batch:
             labels = batch.pop('labels')
+            mask = batch.pop('mask')
+
         outputs = self.model(*args, **batch)
         logits = outputs[0]
         if labels is not None:
-            mask = torch.tensor(batch['input_ids'].clone() == mask_token_id, dtype=torch.float32)
             loss = self.compute_loss_mlm(labels, logits, mask)
             acc = self.compute_acc(labels, logits, batch['attention_mask'])
             mlm_acc = self.compute_acc(labels, logits, mask)
@@ -65,7 +68,7 @@ if __name__ == '__main__':
                                           save_top_k=5,
                                           every_n_train_steps=2000 // training_args.gradient_accumulation_steps)
     trainer = Trainer(
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, LearningRateMonitor(logging_interval='step')],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
         accelerator="gpu", replace_sampler_ddp=False,
