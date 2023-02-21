@@ -23,14 +23,15 @@ train_info_args = {
     'do_train': True, 
     'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
     'learning_rate': 5e-5,
-    'max_epochs': 3,
+    'max_epochs': -1,
+    'max_steps': 300000,
     'train_batch_size': 8,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
     'max_grad_norm': 1.0,
-    'weight_decay': 0,
-    'warmup_steps': 0,
+    'weight_decay': 0.01,
+    'warmup_steps': 10000,
     'output_dir': './output',
     'train_max_seq_length': 512,
     'eval_max_seq_length': 512,
@@ -110,7 +111,19 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-        o['labels'] = o['labels'][:, :max_len]
+
+        input_ids = o['input_ids']
+        masked_lm_positions = o.pop('masked_lm_positions')
+        masked_lm_ids = o.pop('masked_lm_ids')
+        masked_lm_weights = o.pop('masked_lm_weights')
+        labels = torch.clone(input_ids)
+        mask = torch.zeros_like(input_ids)
+        for i, (index, value, weight) in enumerate(zip(masked_lm_positions, masked_lm_ids, masked_lm_weights.long())):
+            s = torch.sum(weight)
+            labels[i, index[:s]] = value[:s]
+            mask[i, index[:s]] = 1
+        o['labels'] = labels
+        o['mask'] = mask
         return o
 
 if __name__ == '__main__':

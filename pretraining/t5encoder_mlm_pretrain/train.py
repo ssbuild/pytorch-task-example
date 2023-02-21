@@ -19,24 +19,26 @@ class MyTransformer(TransformerT5EncoderMaskedLM, with_pl=True):
         self.loss_fct = CrossEntropyLoss(reduction='mean')
 
     def compute_loss_mlm(self, y_trues, y_preds, mask):
-        mask = mask.view(-1).bool()
-        loss = self.loss_fct(y_preds.view(-1, y_preds.size(-1)), y_trues.view(-1))
-        loss = torch.masked_select(loss, mask).sum() / (torch.sum(mask) + 1e-8)
-        return loss
+        y_preds = torch.transpose(y_preds, 1, 2)
+        masked_lm_loss = self.loss_fct(y_preds, y_trues)
+        masked_lm_loss = torch.sum(mask * masked_lm_loss) / (torch.sum(mask) + 1e-8)
+        return masked_lm_loss
 
     def compute_acc(self, y_trues, y_preds, mask):
-        z = torch.eq(torch.argmax(y_preds, dim=-1), y_trues)
-        acc = torch.sum(z * mask) / torch.count_nonzero(mask)
+        acc = torch.eq(torch.argmax(y_preds, dim=-1), y_trues)
+        acc = torch.sum(mask * acc) / (torch.sum(mask) + 1e-8)
         return acc
 
     def compute_loss(self, *args, **batch) -> tuple:
         labels = None
+        mask = None
         if 'labels' in batch:
             labels = batch.pop('labels')
+            mask = batch.pop('mask')
+
         outputs = self.model(*args, **batch)
         logits = outputs[0]
         if labels is not None:
-            mask = torch.tensor(batch['input_ids'].clone() == mask_token_id, dtype=torch.float32)
             loss = self.compute_loss_mlm(labels, logits, mask)
             acc = self.compute_acc(labels, logits, batch['attention_mask'])
             mlm_acc = self.compute_acc(labels, logits, mask)
