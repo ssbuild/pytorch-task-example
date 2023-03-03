@@ -1,7 +1,7 @@
 ## 安装
 
-- pip install -U deep_training >= 0.0.15
-- 当前文档版本pypi 0.0.15
+- pip install -U deep_training >= 0.0.16
+- 当前文档版本pypi 0.0.16
 
 ## 更新详情
 
@@ -44,11 +44,6 @@
     第三步 #导出onnx模型
     model.convert_to_onnx('./best.onnx')
 
-## 切换优化器
-
-    参数配置 optimizer = adamw # one of adamw,adam,lion
-
-
 ## 多卡训练策略 strategy , 通常只需要一步
     修改参数配置 devices = N 
 
@@ -62,6 +57,11 @@
     # deepspeed_stage_3, deepspeed_stage_3_offload, deepspeed_stage_3_offload_nvme,
     # dp, fsdp, fsdp_native, fsdp_native_full_shard_offload, horovod, hpu_parallel,
     # hpu_single, ipu_strategy, single_device, single_tpu, tpu_spawn, tpu_spawn_debug"
+
+## 大模型Lora训练
+    
+    [chatyuan_finetuning](https://github.com/ssbuild/chatyuan_finetuning)
+    [prompt_finetuning](https://github.com/ssbuild/prompt_finetuning)
 
 ## 愿景
 
