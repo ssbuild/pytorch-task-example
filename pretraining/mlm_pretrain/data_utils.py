@@ -38,7 +38,7 @@ train_info_args = {
     'train_max_seq_length': 512,
     'eval_max_seq_length': 512,
     'test_max_seq_length': 512,
-    'do_lower_case': False,
+    'do_lower_case': True,
     'do_whole_word_mask': True,
     'max_predictions_per_seq': 20,
     'dupe_factor': 5,
