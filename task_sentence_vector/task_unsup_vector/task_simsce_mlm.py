@@ -41,7 +41,7 @@ train_info_args = {
     'warmup_steps': 0,
     'output_dir': './output',
     'max_seq_length': 512,
-    'do_lower_case': False,
+    'do_lower_case': True,
     'do_whole_word_mask': True,
     'max_predictions_per_seq': 20,
     'masked_lm_prob': 0.15
@@ -128,13 +128,30 @@ class NN_DataHelper(DataHelper):
             o[k] = torch.stack(o[k])
 
         max_len = torch.max(o.pop('seqlen'))
-        bs, n, s = o['input_ids'].size()
-        o = {k: torch.reshape(v, (-1, s)) for k, v in o.items()}
+
+
+        for k,v in o.items():
+            bs, n, s = v.size()
+            o[k] = torch.reshape(v, (-1, s))
+
         o['input_ids'] = o['input_ids'][:, :max_len]
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-        o['labels'] = o['labels'][:, :max_len]
+
+        input_ids = o['input_ids']
+        masked_lm_positions = o.pop('masked_lm_positions')
+        masked_lm_ids = o.pop('masked_lm_ids')
+        masked_lm_weights = o.pop('masked_lm_weights')
+        labels = torch.clone(input_ids)
+        mask = torch.zeros_like(input_ids)
+        for i, (index, value, weight) in enumerate(zip(masked_lm_positions, masked_lm_ids, masked_lm_weights.long())):
+            s = torch.sum(weight)
+            labels[i, index[:s]] = value[:s]
+            mask[i, index[:s]] = 1
+        o['labels'] = labels
+        o['mask'] = mask
+
         return o
 
     def collate_fn(self,batch):
@@ -155,7 +172,19 @@ class NN_DataHelper(DataHelper):
         o['attention_mask'] = o['attention_mask'][:, :max_len]
         if 'token_type_ids' in o:
             o['token_type_ids'] = o['token_type_ids'][:, :max_len]
-        o['labels'] = o['labels'][:, :max_len]
+
+        input_ids = o['input_ids']
+        masked_lm_positions = o.pop('masked_lm_positions')
+        masked_lm_ids = o.pop('masked_lm_ids')
+        masked_lm_weights = o.pop('masked_lm_weights')
+        labels = torch.clone(input_ids)
+        mask = torch.zeros_like(input_ids)
+        for i, (index, value, weight) in enumerate(zip(masked_lm_positions, masked_lm_ids, masked_lm_weights.long())):
+            s = torch.sum(weight)
+            labels[i, index[:s]] = value[:s]
+            mask[i, index[:s]] = 1
+        o['labels'] = labels
+        o['mask'] = mask
         return o
 
 
@@ -165,7 +194,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         config = self.config
         self.mlm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.sim_head = nn.Linear(config.hidden_size, 512, bias=False)
-        self.loss_fct = CrossEntropyLoss(reduction='mean')
+        self.loss_fct = CrossEntropyLoss(reduction='none')
         self.loss_cse = SimcseLoss()
 
     def get_model_lr(self):
@@ -174,21 +203,29 @@ class MyTransformer(TransformerModel, with_pl=True):
             (self.sim_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
 
+    def compute_loss_mlm(self, y_trues, y_preds, mask):
+        y_preds = torch.transpose(y_preds, 1, 2)
+        masked_lm_loss = self.loss_fct(y_preds, y_trues)
+        masked_lm_loss = torch.sum(mask * masked_lm_loss) / (torch.sum(mask) + 1e-8)
+        return masked_lm_loss
 
-    def compute_loss_mlm(self, y_trues, y_preds):
-        loss = self.loss_fct(y_preds.view(-1,y_preds.size(-1)), y_trues.view(-1))
-        return loss
+    def compute_acc(self, y_trues, y_preds, mask):
+        acc = torch.eq(torch.argmax(y_preds, dim=-1), y_trues)
+        acc = torch.sum(mask * acc) / (torch.sum(mask) + 1e-8)
+        return acc
 
     def compute_loss(self, *args, **batch) -> tuple:
         labels = None
+        mask = None
         if 'labels' in batch:
             labels = batch.pop('labels')
+            mask = batch.pop('mask')
 
         outputs = self.model(*args, **batch)
         mlm_logits = self.mlm_head(outputs[0])
         simcse_logits = self.sim_head(outputs[1])
         if labels is not None:
-            loss1 = self.comput_loss_mlm(labels, mlm_logits)
+            loss1 = self.compute_loss_mlm(labels, mlm_logits,mask)
             loss2 = self.loss_cse(simcse_logits)
             loss = loss1 + loss2
             loss_dict = {
