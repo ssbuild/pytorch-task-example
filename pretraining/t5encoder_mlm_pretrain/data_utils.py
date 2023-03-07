@@ -23,7 +23,7 @@ train_info_args = {
     'do_train': True, 
     'train_file': [ '/data/nlp/nlp_train_data/thucnews/train.json'],
     'learning_rate': 5e-5,
-    'max_epochs': -1,
+    'max_epochs': None,
     'max_steps': 300000,
     'train_batch_size': 8,
     'test_batch_size': 2,

@@ -44,7 +44,7 @@ train_info_args = {
     'label_file': [ '/data/record/cse_0110/labels_122.txt'],
     'learning_rate': 3e-5,
     'max_steps': 120000,
-    'max_epochs': 1,
+    'max_epochs': None,
     'train_batch_size': 10,
     'eval_batch_size': 10,
     'test_batch_size': 10,
