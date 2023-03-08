@@ -13,7 +13,7 @@ from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
-from transformers import HfArgumentParser
+from transformers import HfArgumentParser, T5ForConditionalGeneration
 
 from data_utils import train_info_args, NN_DataHelper
 
@@ -57,7 +57,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
 
         # 当前设备
         device = torch.device('cuda:{}'.format(trainer.global_rank))
-        eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,batch_size=training_args.eval_batch_size,collate_fn=dataHelper.collate_fn)
+        eval_datasets = dataHelper.load_sequential_sampler(dataHelper.eval_files,
+                                                           batch_size=training_args.eval_batch_size,
+                                                           collate_fn=dataHelper.collate_fn)
 
         config = pl_module.config
 
@@ -99,11 +101,11 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             for k in batch:
                 batch[k] = batch[k].to(device)
             for input_ids,attention_mask,labels in zip(batch['input_ids'],batch['attention_mask'],batch_labels):
-                seqlen = np.sum(attention_mask,axis=-1)
+                seqlen = torch.sum(attention_mask,dim=-1)
                 output = MySimpleModelCheckpoint.generate_text_huggingface(pl_module,
                                                                             input_ids,
                                                                             tokenizer=tokenizer,
-                                                                            max_target_length=config.max_target_length,
+                                                                            max_target_length=data_args.max_target_length,
                                                                             device=trainer.global_rank)
                 source = input_ids[1:seqlen-1].cpu().numpy()
                 #  三元组（action,position,vocab）
@@ -147,7 +149,9 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="val_f1", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(monitor="val_f1",
+                                                  every_n_epochs=1,
+                                                  every_n_train_steps=1000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
