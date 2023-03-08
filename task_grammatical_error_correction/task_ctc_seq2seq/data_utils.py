@@ -22,7 +22,8 @@ train_info_args = {
     'train_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/train.json'],
     'eval_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/dev.json'],
     'test_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/test.json'],
-    'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/labels.json'],
+    #'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/labels.json'],
+    'label_file': [ ],
     'learning_rate': 5e-5,
     'max_epochs': 3,
     'train_batch_size': 10,
@@ -50,9 +51,9 @@ class NN_DataHelper(DataHelper):
         def get_tokenizer_output(text):
             o1 = tokenizer.encode_plus(text, max_length=max_seq_length, truncation=True, add_special_tokens=True, )
 
-            input_ids = np.asarray(o1['input_ids'], dtype=np.int64)
-            attention_mask = np.asarray(o1['attention_mask'], dtype=np.int64)
-            seqlen = np.asarray(len(input_ids), dtype=np.int64)
+            input_ids = np.asarray(o1['input_ids'], dtype=np.int32)
+            attention_mask = np.asarray(o1['attention_mask'], dtype=np.int32)
+            seqlen = np.asarray(len(input_ids), dtype=np.int32)
             pad_len = max_seq_length - seqlen
             if pad_len > 0:
                 pad_val = tokenizer.pad_token_id
@@ -75,9 +76,13 @@ class NN_DataHelper(DataHelper):
         d['decoder_attention_mask'] = o2['attention_mask']
         d['decoder_seqlen'] = o2['seqlen']
 
-        labels = np.ones_like(d['decoder_input_ids'],dtype=np.int64) * -100
+        labels = np.ones_like(d['decoder_input_ids'],dtype=np.int32) * -100
         labels[:o2['seqlen']-1] = d['decoder_input_ids'][1:o2['seqlen']]
+
+        d['labels'] = labels
         return d
+
+
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
@@ -104,13 +109,13 @@ class NN_DataHelper(DataHelper):
 
 
         max_len = torch.max(o.pop('seqlen'))
-        o['input_ids'] = o['input_ids'][:, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :max_len]
+        o['input_ids'] = o['input_ids'][:, :max_len].long()
+        o['attention_mask'] = o['attention_mask'][:, :max_len].long()
 
         max_len = torch.max(o.pop('decoder_seqlen'))
-        o['decoder_input_ids'] = o['decoder_input_ids'][:, :max_len]
-        o['decoder_attention_mask'] = o['decoder_attention_mask'][:, :max_len]
-        o['labels'] = o['labels'][:, :max_len]
+        o['decoder_input_ids'] = o['decoder_input_ids'][:, :max_len].long()
+        o['decoder_attention_mask'] = o['decoder_attention_mask'][:, :max_len].long()
+        o['labels'] = o['labels'][:, :max_len].long()
         return o
 
 
