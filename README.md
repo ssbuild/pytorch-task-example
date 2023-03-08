@@ -5,11 +5,13 @@
 
 ## 更新详情
 
-- [deep_training](https://github.com/ssbuild/deep_training)
+  - [deep_training](https://github.com/ssbuild/deep_training)
+  - 
+## 其他训练
+  - [pytorch-task-example](https://github.com/ssbuild/pytorch-task-example)
+  - [tf-task-example](https://github.com/ssbuild/tf-task-example)
+  - [poetry_training](https://github.com/ssbuild/poetry_training)
 
-## 诗歌模型训练
-
-- [poetry_training](https://github.com/ssbuild/poetry_training)
 
 ## 目录
 - pretraining 主流预训练模型
