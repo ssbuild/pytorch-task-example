@@ -41,9 +41,10 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                    eos_token_id = tokenizer.sep_token_id,
         )
 
-        gen_ids, gen_tokens = [], []
+        gen_tokens = []
+        gen_ids =  output[0].cpu().numpy()
         for logits in output[0]:
-            gen_ids.append(logits)
+            # gen_ids.append(logits.cpu().numpy())
             token = tokenizer._convert_id_to_token(logits)
             if token.startswith('##'):
                 token = token.replace('##', '')
@@ -66,9 +67,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         y_preds, y_trues = [], []
 
         op_map = {
-            'insert': 1,
-            'delete': 2,
-            'replace': 3
+            'insert': 0,
+            'delete': 1,
+            'replace': 2
         }
 
         #  三元组（action,position,vocab）
@@ -84,11 +85,11 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
                 ds = item[3]
                 de = item[4]
                 #insert,replace
-                if action == 1 or action == 3:
-                    for idx in range(de-ds + 1):
+                if action == 0 or action == 2:
+                    for idx in range(de-ds):
                         ops.append((action, s+idx, target[ds + idx]))
                 #delete
-                elif action == 2:
+                elif action == 1:
                     for idx in range(s, e):
                         ops.append((action, s+idx, 0))
                 else:
@@ -128,9 +129,9 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
         print(y_trues[:3])
 
         label2id = {
-            'insert': 1,
-            'delete': 2,
-            'replace': 3
+            'insert': 0,
+            'delete': 1,
+            'replace': 2
         }
 
         f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)
@@ -151,7 +152,7 @@ if __name__ == '__main__':
 
     checkpoint_callback = MySimpleModelCheckpoint(monitor="val_f1",
                                                   every_n_epochs=1,
-                                                  every_n_train_steps=1000)
+                                                  every_n_train_steps=2000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

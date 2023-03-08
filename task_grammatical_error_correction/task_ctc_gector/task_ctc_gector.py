@@ -46,17 +46,23 @@ class MySimpleModelCheckpoint(SimpleModelCheckpoint):
             #抽取 三元组（action,position,vocab）
             output_list = extract_gec([logits_action,logits_probs,seqlens])
             true_list = extract_gec_from_labels([labels_action,labels_probs,seqlens])
-            y_preds.extend(output_list)
-            y_trues.extend(true_list)
+            # y_preds.extend(output_list)
+            # y_trues.extend(true_list)
+            for ones in output_list:
+                y_preds.append( [(_[0]-1,*_[1:]) for _ in ones])
+
+            for ones in true_list:
+                y_trues.append([(_[0] - 1, *_[1:]) for _ in ones])
+
 
         #  三元组（action,position,vocab）
         print(y_preds[:3])
         print(y_trues[:3])
 
         label2id = {
-            'insert': 1,
-            'delete': 2,
-            'replace': 3
+            'insert': 0,
+            'delete': 1,
+            'replace': 2
         }
 
         f1, str_report = metric_for_pointer(y_trues, y_preds, label2id)

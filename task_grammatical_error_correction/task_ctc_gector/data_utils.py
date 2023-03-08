@@ -22,7 +22,8 @@ train_info_args = {
     'train_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/train.json'],
     'eval_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/dev.json'],
     'test_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/test.json'],
-    'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/labels.json'],
+    # 'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/labels.json'],
+    'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/vocab.txt'],
     'learning_rate': 5e-5,
     'max_epochs': 3,
     'train_batch_size': 10,
@@ -61,11 +62,17 @@ class NN_DataHelper(DataHelper):
         labels_action = [-100] * max_seq_length
         labels_probs = [-100] * max_seq_length
         for op in label_ops:
-            op[1] += 1
-            op[2] += 1
-            labels_action[op[1]:op[2]] = op[0]
-            for j in range(op[1],op[2]):
+            s = op[1] + 1
+            e = op[2] + 1
+
+            for j in range(s,e):
+                labels_action[j] = op[0]
                 labels_probs[j] = label2id[tokens[j]]
+
+        input_ids = np.asarray(input_ids,np.int32)
+        attention_mask = np.asarray(attention_mask, np.int32)
+        labels_action = np.asarray(labels_action, np.int32)
+        labels_probs = np.asarray(labels_probs, np.int32)
 
         seqlen = np.asarray(len(input_ids), dtype=np.int64)
         pad_len = max_seq_length - len(input_ids)
@@ -127,8 +134,8 @@ class NN_DataHelper(DataHelper):
                         ops = []
                         for item in edits:
                             op = op_map[item[0]]
-                            s = item[0]
-                            e = item[1]
+                            s = item[1]
+                            e = item[2]
                             ops.append((op,s,e))
                     else:
                         ops = None

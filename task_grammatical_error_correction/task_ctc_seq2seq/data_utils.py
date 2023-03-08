@@ -27,6 +27,7 @@ train_info_args = {
     'learning_rate': 5e-5,
     'max_epochs': 3,
     'train_batch_size': 10,
+    'eval_batch_size': 10,
     'test_batch_size': 2,
     'adam_epsilon': 1e-8,
     'gradient_accumulation_steps': 1,
@@ -92,6 +93,10 @@ class NN_DataHelper(DataHelper):
                 lines = f.readlines()
                 for i, line in enumerate(lines):
                     jd = json.loads(line)
+
+                    if mode == 'eval':
+                        if i > 50:
+                            break
                     D.append((jd['source'], jd['target']))
         return D
 
