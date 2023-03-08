@@ -22,7 +22,8 @@ train_info_args = {
     'train_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/train.json'],
     'eval_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/dev.json'],
     'test_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/test.json'],
-    'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/labels.json'],
+    #'label_file': [ '/data/nlp/nlp_train_data/clue/CTC2021/labels.json'],
+    'label_file': [ ],
     'learning_rate': 5e-5,
     'max_epochs': 3,
     'train_batch_size': 10,
@@ -77,7 +78,11 @@ class NN_DataHelper(DataHelper):
 
         labels = np.ones_like(d['decoder_input_ids'],dtype=np.int32) * -100
         labels[:o2['seqlen']-1] = d['decoder_input_ids'][1:o2['seqlen']]
+
+        d['labels'] = labels
         return d
+
+
 
     # 读取文件
     def on_get_corpus(self, files: typing.List, mode: str):
