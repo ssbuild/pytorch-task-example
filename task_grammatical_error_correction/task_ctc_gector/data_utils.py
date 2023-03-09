@@ -145,6 +145,8 @@ class NN_DataHelper(DataHelper):
                     else:
                         ops = None
                     D.append((src,ops))
+        if mode == 'eval':
+            return D[:500]
         return D
 
     def collate_fn(self,batch):
