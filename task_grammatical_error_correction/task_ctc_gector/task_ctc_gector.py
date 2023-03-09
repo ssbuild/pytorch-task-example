@@ -82,7 +82,8 @@ if __name__ == '__main__':
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_dict(train_info_args)
 
-    checkpoint_callback = MySimpleModelCheckpoint(monitor="val_f1", every_n_epochs=1)
+    checkpoint_callback = MySimpleModelCheckpoint(every_n_epochs=1,
+                                                  every_n_train_steps=2000)
     trainer = Trainer(
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,

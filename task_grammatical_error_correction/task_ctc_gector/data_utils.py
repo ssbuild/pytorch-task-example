@@ -53,7 +53,7 @@ class NN_DataHelper(DataHelper):
 
         tokens = list(sentence) if not do_lower_case else list(sentence.lower())
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
-        tokens = tokenizer.convert_ids_to_tokens(input_ids)
+        tokens = ['[CLS]']  + tokenizer.convert_ids_to_tokens(input_ids) +  ['[SEP]']
         if len(input_ids) > max_seq_length - 2:
             input_ids = input_ids[:max_seq_length - 2]
         input_ids = [tokenizer.cls_token_id] + input_ids + [tokenizer.sep_token_id]
@@ -61,10 +61,15 @@ class NN_DataHelper(DataHelper):
 
         labels_action = [-100] * max_seq_length
         labels_probs = [-100] * max_seq_length
+
+
         for op in label_ops:
             s = op[1] + 1
             e = op[2] + 1
 
+            if e >= max_seq_length:
+                print('corpus long length!')
+                continue
             for j in range(s,e):
                 labels_action[j] = op[0]
                 labels_probs[j] = label2id[tokens[j]]
@@ -140,7 +145,7 @@ class NN_DataHelper(DataHelper):
                     else:
                         ops = None
                     D.append((src,ops))
-        return D[0:1000] if mode == 'train' else D[:100]
+        return D
 
     def collate_fn(self,batch):
         o = {}
@@ -156,14 +161,14 @@ class NN_DataHelper(DataHelper):
 
         max_len = torch.max(o.pop('seqlen'))
 
-        o['input_ids'] = o['input_ids'][:, :max_len]
-        o['attention_mask'] = o['attention_mask'][:, :max_len]
+        o['input_ids'] = o['input_ids'][:, :max_len].long()
+        o['attention_mask'] = o['attention_mask'][:, :max_len].long()
         if 'token_type_ids' in o:
-            o['token_type_ids'] = o['token_type_ids'][:, :max_len]
+            o['token_type_ids'] = o['token_type_ids'][:, :max_len].long()
 
         if 'labels_action' in o:
-            o['labels_action'] = o['labels_action'][:, :max_len]
-            o['labels_probs'] = o['labels_probs'][:, :max_len]
+            o['labels_action'] = o['labels_action'][:, :max_len].long()
+            o['labels_probs'] = o['labels_probs'][:, :max_len].long()
         return o
 
 
