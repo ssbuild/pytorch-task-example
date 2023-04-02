@@ -10,7 +10,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.nlp.models.prefixtuning import PrefixTransformerForCRF
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from pytorch_lightning import Trainer
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT
+
 from seqmetric.metrics import f1_score, classification_report
 from seqmetric.scheme import IOBES
 from torch.utils.data import DataLoader, IterableDataset
@@ -163,30 +163,30 @@ class MyTransformer(PrefixTransformerForCRF, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
 
-    def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
-        y_preds, y_trues = [], []
-        for o in outputs:
-            preds, labels = o['outputs']
-            for p, l in zip(preds, labels):
-                y_preds.append(p)
-                y_trues.append(l)
-
-        label_map = self.config.id2label
-        trues_list = [[] for _ in range(len(y_trues))]
-        preds_list = [[] for _ in range(len(y_preds))]
-
-        for i in range(len(y_trues)):
-            for j in range(len(y_trues[i])):
-                if y_trues[i][j] != self.config.pad_token_id:
-                    trues_list[i].append(label_map[y_trues[i][j]])
-                    preds_list[i].append(label_map[y_preds[i][j]])
-
-        scheme = IOBES
-        f1 = f1_score(trues_list, preds_list, average='macro', scheme=scheme)
-        report = classification_report(trues_list, preds_list, scheme=scheme, digits=4)
-
-        print(f1, report)
-        self.log('val_f1', f1)
+    # def validation_epoch_end(self, outputs: typing.Union[EPOCH_OUTPUT, typing.List[EPOCH_OUTPUT]]) -> None:
+    #     y_preds, y_trues = [], []
+    #     for o in outputs:
+    #         preds, labels = o['outputs']
+    #         for p, l in zip(preds, labels):
+    #             y_preds.append(p)
+    #             y_trues.append(l)
+    #
+    #     label_map = self.config.id2label
+    #     trues_list = [[] for _ in range(len(y_trues))]
+    #     preds_list = [[] for _ in range(len(y_preds))]
+    #
+    #     for i in range(len(y_trues)):
+    #         for j in range(len(y_trues[i])):
+    #             if y_trues[i][j] != self.config.pad_token_id:
+    #                 trues_list[i].append(label_map[y_trues[i][j]])
+    #                 preds_list[i].append(label_map[y_preds[i][j]])
+    #
+    #     scheme = IOBES
+    #     f1 = f1_score(trues_list, preds_list, average='macro', scheme=scheme)
+    #     report = classification_report(trues_list, preds_list, scheme=scheme, digits=4)
+    #
+    #     print(f1, report)
+    #     self.log('val_f1', f1)
 
 
 class MySimpleModelCheckpoint(SimpleModelCheckpoint):
@@ -249,14 +249,14 @@ if __name__ == '__main__':
         callbacks=[checkpoint_callback],
         max_epochs=training_args.max_epochs,
         max_steps=training_args.max_steps,
-        accelerator="gpu",replace_sampler_ddp=False,
+        accelerator="gpu",
         devices=data_args.devices,
         enable_progress_bar=True,
         default_root_dir=data_args.output_dir,
         gradient_clip_val=training_args.max_grad_norm,
         accumulate_grad_batches=training_args.gradient_accumulation_steps,
         num_sanity_val_steps=0,
-        strategy='ddp' if torch.cuda.device_count() > 1 else None,
+        strategy='ddp' if torch.cuda.device_count() > 1 else 'auto',
     )
 
     dataHelper = NN_DataHelper(model_args, training_args, data_args)
@@ -274,11 +274,12 @@ if __name__ == '__main__':
     model = MyTransformer(prompt_args=prompt_args, config=config, model_args=model_args, training_args=training_args)
 
     if not data_args.convert_onnx:
-        train_datasets = dataHelper.load_random_sampler(dataHelper.train_files,
-                                                        with_load_memory=True,
-                                                        collate_fn=dataHelper.collate_fn,
-                                                        batch_size=training_args.train_batch_size,
-                                                        shuffle=True,infinite=True,num_processes=trainer.world_size,process_index=trainer.global_rank)
+        train_datasets = dataHelper.load_distributed_random_sampler(
+            dataHelper.train_files,
+            with_load_memory=True,
+            collate_fn=dataHelper.collate_fn,
+            batch_size=training_args.train_batch_size,
+            num_processes = trainer.world_size, process_index=trainer.global_rank)
         if train_datasets is not None:
             trainer.fit(model, train_dataloaders=train_datasets)
         else:
