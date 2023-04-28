@@ -9,7 +9,7 @@ from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, PrefixModelArguments
 from deep_training.nlp.models.prefixtuning import PrefixTransformerForCRF
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 
 from seqmetric.metrics import f1_score, classification_report
 from seqmetric.scheme import IOBES

@@ -6,7 +6,7 @@ import torch
 from deep_training.data_helper import ModelArguments, DataArguments, TrainingArguments
 from deep_training.nlp.models.transformer import TransformerForSeq2SeqLM
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser, BertTokenizer
 

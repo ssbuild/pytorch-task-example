@@ -4,8 +4,8 @@ import random
 import torch
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
 from deep_training.nlp.models.t5encoder import TransformerT5EncoderMaskedLM
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
+from lightning import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser

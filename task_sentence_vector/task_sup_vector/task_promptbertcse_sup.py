@@ -13,7 +13,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.nlp.models.promptbert_cse import TransformerForPromptbertcse, PromptBertcseArguments
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from torch.utils.data import DataLoader, IterableDataset

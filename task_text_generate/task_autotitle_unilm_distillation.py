@@ -11,7 +11,7 @@ from deep_training.nlp.losses.loss_kl import KLDivLoss
 from deep_training.nlp.models.transformer import TransformerModelForUnilm
 from deep_training.utils.func import seq_padding
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import BertTokenizer
 from transformers import HfArgumentParser

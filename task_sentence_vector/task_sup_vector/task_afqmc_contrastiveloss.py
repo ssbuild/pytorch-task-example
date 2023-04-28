@@ -11,7 +11,7 @@ from deep_training.nlp.losses.ContrastiveLoss import ContrastiveLoss
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.func import seq_pading
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from torch import nn

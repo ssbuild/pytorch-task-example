@@ -11,7 +11,7 @@ from deep_training.data_helper import ModelArguments, DataArguments, TrainingArg
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.span_ner import TransformerForSpanNer, extract_lse_singlelabel, extract_lse_mutilabel
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm

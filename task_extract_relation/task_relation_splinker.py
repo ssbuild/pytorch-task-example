@@ -10,7 +10,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.nlp.models.splinker import TransformerForSplinker
 from deep_training.nlp.models.splinker.splinker import extract_spoes
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 
 from seqmetric.metrics.spo_labeling import spo_report, get_report_from_string
 from torch.utils.data import DataLoader, IterableDataset

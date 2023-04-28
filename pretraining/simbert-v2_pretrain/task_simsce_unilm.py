@@ -5,8 +5,8 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.nlp.layers.mask import unilm_mask
 from deep_training.nlp.losses.contrast import SimcseLoss
 from deep_training.nlp.models.transformer import TransformerModelForUnilm
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
+from lightning import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
 from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser

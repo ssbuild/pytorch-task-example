@@ -3,8 +3,8 @@
 import torch
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.nlp.models.transformer import TransformerForCausalLM
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
+from lightning import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser
 from data_utils import NN_DataHelper,train_info_args

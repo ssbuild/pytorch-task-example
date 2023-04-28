@@ -12,7 +12,7 @@ from deep_training.nlp.models.tsdae_model import TransformerForTSDAE, TsdaelArgu
 from deep_training.utils.func import seq_pading, seq_padding
 from deep_training.utils.trainer import SimpleModelCheckpoint
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from torch.utils.data import DataLoader, IterableDataset

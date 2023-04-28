@@ -5,8 +5,8 @@ import random
 import torch
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments, MlmDataArguments
 from deep_training.nlp.models.transformer import TransformerForMaskLM
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import HfArgumentParser

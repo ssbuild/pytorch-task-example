@@ -10,7 +10,7 @@ from deep_training.data_helper import ModelArguments, DataArguments, TrainingArg
 from deep_training.nlp.metrics.pointer import metric_for_pointer
 from deep_training.nlp.models.w2ner import TransformerForW2ner, extract_lse, W2nerArguments
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm

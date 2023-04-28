@@ -12,8 +12,8 @@ from deep_training.nlp.losses.contrast import SimcseLoss
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.maskedlm import make_mlm_wwm_sample
 from fastdatasets.torch_dataset import Dataset as torch_Dataset
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
+from lightning import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
 from torch import nn
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, IterableDataset

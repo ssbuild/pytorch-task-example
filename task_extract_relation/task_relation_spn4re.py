@@ -13,7 +13,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.nlp.metrics.pointer import metric_for_spo
 from deep_training.nlp.models.spn4re import TransformerForSPN4RE, extract_spoes, Spn4reArguments
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 from transformers import HfArgumentParser, BertTokenizer

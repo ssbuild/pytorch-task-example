@@ -6,13 +6,13 @@ import os.path
 import typing
 
 import numpy as np
-import pytorch_lightning
+import lightning
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
 from deep_training.nlp.models.infonce import TransformerForInfoNce
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from torch.utils.data import DataLoader, IterableDataset
@@ -274,7 +274,7 @@ def evaluate_sample(a_vecs, b_vecs, labels):
     return correlation
 
 
-class MyTransformer(TransformerForInfoNce, pytorch_lightning.LightningModule, with_pl=True):
+class MyTransformer(TransformerForInfoNce, lightning.LightningModule, with_pl=True):
     def __init__(self, *args, **kwargs):
         super(MyTransformer, self).__init__(*args, **kwargs)
 

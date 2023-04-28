@@ -5,7 +5,7 @@ import os.path
 import typing
 
 import numpy as np
-import pytorch_lightning
+import lightning
 import torch
 from deep_training.data_helper import DataHelper
 from deep_training.data_helper import ModelArguments, TrainingArguments, DataArguments
@@ -13,7 +13,7 @@ from deep_training.nlp.losses.focal_loss import FocalLoss
 from deep_training.nlp.losses.loss_cosface import AddMarginProduct
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from tfrecords import TFRecordOptions
@@ -211,7 +211,7 @@ def evaluate_sample(a_vecs, b_vecs, labels):
     return correlation
 
 
-class MyTransformer(TransformerModel, pytorch_lightning.LightningModule, with_pl=True):
+class MyTransformer(TransformerModel, lightning.LightningModule, with_pl=True):
     def __init__(self, *args, **kwargs):
         pooling = kwargs.pop('pooling', 'cls')
         super(MyTransformer, self).__init__(*args, **kwargs)

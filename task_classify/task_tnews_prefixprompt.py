@@ -10,7 +10,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, PrefixM
     DataArguments
 from deep_training.nlp.models.prefixtuning import PrefixTransformerForSequenceClassification
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 
 from sklearn.metrics import f1_score, classification_report
 from torch.nn import CrossEntropyLoss

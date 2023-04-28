@@ -12,7 +12,7 @@ from deep_training.data_helper import ModelArguments, TrainingArguments, DataArg
 from deep_training.nlp.losses.circle_loss import CircleLoss
 from deep_training.nlp.models.transformer import TransformerModel
 from deep_training.utils.trainer import SimpleModelCheckpoint
-from pytorch_lightning import Trainer
+from lightning import Trainer
 from scipy import stats
 from sklearn.metrics.pairwise import paired_distances
 from tfrecords import TFRecordOptions
