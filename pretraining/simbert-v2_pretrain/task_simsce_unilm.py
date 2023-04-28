@@ -20,7 +20,7 @@ class MyTransformer(TransformerModelForUnilm, with_pl=True):
         self.sim_head = nn.Linear(config.hidden_size, 512, bias=False)
         self.loss_fn = SimcseLoss()
 
-    def get_model_lr(self):
+    def get_model_lr(self,model=None,lr=None):
         return super(MyTransformer, self).get_model_lr() + [
             (self.sim_head, self.config.task_specific_params['learning_rate_for_task'])
         ]

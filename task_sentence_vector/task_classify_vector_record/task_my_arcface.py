@@ -225,7 +225,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         else:
             self.loss_fn = torch.nn.CrossEntropyLoss()
 
-    def get_model_lr(self):
+    def get_model_lr(self,model=None,lr=None):
         return super(MyTransformer, self).get_model_lr() + [
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task']),
             (self.metric_product, self.config.task_specific_params['learning_rate_for_task']),

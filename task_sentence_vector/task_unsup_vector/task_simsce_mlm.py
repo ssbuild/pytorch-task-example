@@ -197,7 +197,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         self.loss_fct = CrossEntropyLoss(reduction='none')
         self.loss_cse = SimcseLoss()
 
-    def get_model_lr(self):
+    def get_model_lr(self,model=None,lr=None):
         return super(MyTransformer, self).get_model_lr() + [
             (self.mlm_head, self.config.task_specific_params['learning_rate_for_task']),
             (self.sim_head, self.config.task_specific_params['learning_rate_for_task'])

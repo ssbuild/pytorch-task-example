@@ -145,7 +145,7 @@ class MyTransformer(TransformerModel, with_pl=True):
         self.feat_head = nn.Linear(config.hidden_size, 512, bias=False)
         self.loss_fn = ContrastiveLoss(size_average=False, margin=0.5)
 
-    def get_model_lr(self):
+    def get_model_lr(self,model=None,lr=None):
         return super(MyTransformer, self).get_model_lr() + [
             (self.feat_head, self.config.task_specific_params['learning_rate_for_task'])
         ]
